@@ -1,0 +1,22 @@
+.columns {
+    display: flex;
+    @for $i from 1 through 5 {
+        .column-grow-#{$i} {
+            flex-grow: $i;
+        }
+    }
+}
+
+.rows {
+    display: flex;
+    flex-direction: column;
+    @for $i from 1 through 4 {
+        .row-grow-#{$i} {
+            flex-grow: $i;
+        }
+    }
+}
+
+.full-width {
+    width: 100vw;
+}
