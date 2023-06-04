@@ -423,6 +423,7 @@ dependencies = [
  "actix-service",
  "actix-web",
  "bcrypt",
+ "bitflags",
  "censor",
  "chrono",
  "derive_more",
