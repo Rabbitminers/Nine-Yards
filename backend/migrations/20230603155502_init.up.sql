@@ -23,7 +23,9 @@ CREATE TABLE IF NOT EXISTS team_members (
 
 CREATE TABLE IF NOT EXISTS projects (
     id TEXT PRIMARY KEY NOT NULL,
-    team_id TEXT REFERENCES teams NOT NULL
+    team_id TEXT REFERENCES teams NOT NULL,
+    name TEXT NOT NULL
+    icon_url TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS task_groups (
