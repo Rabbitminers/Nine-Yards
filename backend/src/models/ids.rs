@@ -69,3 +69,37 @@ id_type!(
     "SELECT COUNT(*) as count FROM team_members WHERE id = ?",
     TeamMemberId
 );
+
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProjectId(pub String);
+
+id_type!(
+    pub generate_project_member_id,
+    ProjectId, 
+    10,
+    "SELECT COUNT(*) as count FROM team_members WHERE id = ?",
+    ProjectId
+);
+
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TaskGroupId(pub String);
+
+id_type!(
+    pub generate_task_group_id,
+    TaskGroupId,
+    8,
+    "SELECT COUNT(*) as count FROM task_groups WHERE id = ?",
+    TaskGroupId
+);
+
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TaskId(pub String);
+
+id_type!(
+    pub generate_tasks_id,
+    TaskId,
+    8,
+    "SELECT COUNT(*) as count FROM tasks WHERE id = ?",
+    TaskId
+);
+
