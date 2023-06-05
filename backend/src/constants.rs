@@ -7,3 +7,4 @@ pub const MESSAGE_INTERNAL_SERVER_ERROR: &str = "Internal Server Error";
 
 pub const ERROR_USERNAME: &str = "User name is already used";
 pub const MESSAGE_SIGNUP_SUCCESS: &str = "Signup successfully";
+pub const MESSAGE_CREATE_TASK_GROUP_SUCCESS: &str = "Created new board successfully!";
