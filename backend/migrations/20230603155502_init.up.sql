@@ -8,6 +8,12 @@ CREATE TABLE IF NOT EXISTS users (
 	login_session TEXT
 );
 
+CREATE TABLE IF NOT EXISTS login_history (
+    id TEXT PRIMARY KEY NOT NULL,
+    user_id TEXT REFERENCES users NOT NULL,
+    login_timestamp TEXT
+);
+
 CREATE TABLE IF NOT EXISTS teams (
     id TEXT PRIMARY KEY NOT NULL
 );
