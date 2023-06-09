@@ -1,20 +1,21 @@
-use crate::models::users::LoginInfoDTO;
 use chrono::Utc;
 use jsonwebtoken::{EncodingKey, Header};
+
+use super::users::LoginSession;
 
 pub static KEY: [u8; 16] = *include_bytes!("../../secret.key");
 static ONE_WEEK: i64 = 60 * 60 * 24 * 7; // in seconds
 
 #[derive(Serialize, Deserialize)]
 pub struct UserToken {
-    pub iat: i64, // Issue time
-    pub exp: i64, // Expiry time
+    pub iat: i64,
+    pub exp: i64,
     pub username: String,
     pub login_session: String,
 }
 
 impl UserToken {
-    pub fn generate_token(login: &LoginInfoDTO) -> String {
+    pub fn generate_token(login: &LoginSession) -> String {
         let now = Utc::now().timestamp_nanos() / 1_000_000_000; // nanosecond -> second
         let payload = UserToken {
             iat: now,
@@ -24,9 +25,9 @@ impl UserToken {
         };
 
         jsonwebtoken::encode(
-            &Header::default(),
-            &payload,
-            &EncodingKey::from_secret(&KEY),
+    &Header::default(),
+    &payload,
+        &EncodingKey::from_secret(&KEY),
         )
         .unwrap()
     }
