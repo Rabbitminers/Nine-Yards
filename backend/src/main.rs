@@ -44,7 +44,9 @@ async fn main() -> std::io::Result<()> {
                     .allowed_header(http::header::CONTENT_TYPE)
                     .max_age(3600),
             )
-            .app_data(web::Data::new(pool.clone()))
+            .app_data(pool.clone())
+            .wrap(actix_web::middleware::Logger::default())
+            .wrap(crate::middleware::auth::Authentication)
             .configure(config::app::config_services)
     })
     .bind(&app_url)?
