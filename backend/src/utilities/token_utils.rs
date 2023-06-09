@@ -1,15 +1,15 @@
 use crate::models::{
-    users::User,
     user_token::{
         UserToken, 
         KEY
-    },
+    }, users::User
 };
-use actix_web::web;
 use jsonwebtoken::{DecodingKey, TokenData, Validation};
 use sqlx::SqlitePool;
 
-pub fn decode_token(token: String) -> jsonwebtoken::errors::Result<TokenData<UserToken>> {
+pub fn decode_token(
+    token: String
+) -> jsonwebtoken::errors::Result<TokenData<UserToken>> {
     jsonwebtoken::decode::<UserToken>(
         &token,
         &DecodingKey::from_secret(&KEY),
@@ -20,10 +20,11 @@ pub fn decode_token(token: String) -> jsonwebtoken::errors::Result<TokenData<Use
 pub async fn verify_token(
     token_data: &TokenData<UserToken>,
     pool: &SqlitePool,
-) -> Result<String, String> {
-    if User::is_valid_login_session(&token_data.claims, pool).await {
-        Ok(token_data.claims.username.to_string())
+) -> Result<User, String> {
+    if let Ok(Some(user)) = User::get_user_from_login_session(&token_data.claims, &pool).await {
+        Ok(user)
     } else {
         Err("Invalid token".to_string())
     }
 }
+
