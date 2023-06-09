@@ -103,3 +103,14 @@ id_type!(
     TaskId
 );
 
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LoginHistoryId(pub String);
+
+id_type!(
+    pub generate_login_history_id,
+    LoginHistoryId,
+    8,
+    "SELECT COUNT(*) as count FROM login_history WHERE id = ?",
+    LoginHistoryId
+);
+
