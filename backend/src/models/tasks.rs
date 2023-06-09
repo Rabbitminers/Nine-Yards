@@ -2,12 +2,16 @@ use sqlx::SqlitePool;
 
 use crate::constants;
 
-use super::{ids::{
-    TaskId, 
-    ProjectId, 
-    TaskGroupId, 
-    UserId, generate_task_group_id
-}, users::User};
+use super::{
+    ids::{
+        TaskId, 
+        ProjectId, 
+        TaskGroupId, 
+        UserId, 
+        generate_task_group_id
+    }, 
+    users::User
+};
 
 pub struct TaskGroup {
     pub id: TaskGroupId,
@@ -89,7 +93,7 @@ impl TaskGroup {
             ",
             self.id.0,
             self.project_id.0,
-            self.name,
+            self.name, 
             self.position
         )
         .execute(conn)
@@ -137,8 +141,48 @@ pub struct Task {
 }
 
 pub struct TaskBuilder {
+    pub project_id: ProjectId,
     pub task_group_id: TaskGroupId,
     pub name: String,
     pub information: String,
-    pub creator: UserId
+    pub creator: UserId,
+
+}
+
+impl Task {
+    pub async fn create(
+        data: &TaskBuilder,
+        conn: &SqlitePool,
+    ) ->  Result<String, String> {
+        unimplemented!()
+    }
+
+    pub async fn insert(
+        &self,
+        conn: &SqlitePool
+    ) -> Result<(), sqlx::error::Error> {
+        sqlx::query!(
+            "
+            INSERT INTO tasks (
+                id, project_id, task_group_id, 
+                name, information, creator, 
+                assignee
+            )
+            VALUES (
+                $1, $2, $3, $4, $5, $6, $7
+            )
+            ",
+            self.id.0,
+            self.project_id.0,
+            self.task_group_id.0,
+            self.name,
+            self.information,
+            self.creator.0,
+            self.assignee.0
+        )
+        .execute(conn)
+        .await?;
+
+        Ok(())
+    }
 }
