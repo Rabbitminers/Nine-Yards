@@ -1,23 +1,30 @@
 use bcrypt::{DEFAULT_COST, hash, verify};
 use sqlx::SqlitePool;
 use uuid::Uuid;
-use crate::{constants, models::{ids::generate_user_id, login_history::{self, LoginHistory}}};
+use validator::Validate;
+use crate::{constants, models::{ids::generate_user_id, login_history::LoginHistory}};
 
 use super::{ids::UserId, user_token::UserToken};
 
-pub const DELETED_USER: UserId = UserId("7102222d-b551-46e6-b1cf-44a67a05aace".to_string());
+pub const DELETED_USER: &str ="7102222d-b551-46e6-b1cf-44a67a05aace";
 
+#[derive(Serialize, Deserialize)]
 pub struct User {
     pub id: UserId,
     pub username: String,
+    #[serde(skip_serializing)]
     pub password: String,
     pub email: String,
+    #[serde(skip_serializing)]
     pub login_session: Option<String>
 }
 
+#[derive(Serialize, Deserialize, Debug, Validate)]
 pub struct Register {
+    #[validate(length(min = 3, max = 30))]
     pub username: String,
     pub password: String,
+    #[validate(email)]
     pub email: String
 }
 
@@ -35,7 +42,7 @@ impl User {
     pub async fn register(
         data: Register, 
         conn: &SqlitePool
-    ) -> Result<String, String> {        
+    ) -> Result<User, String> {        
         // Check if the username is already used
         if let Ok(Some(_)) = Self::find_by_username(&data.username, conn).await {
             return Err(format!("User '{}' is already registered", &data.username));
@@ -50,15 +57,17 @@ impl User {
             Err(_) => return Err(constants::MESSAGE_INTERNAL_SERVER_ERROR.to_string()),
         };
         
-        User {
+        let user: User = User {
             id: user_id,
             username: data.username,
             password: hashed_pwd,
             email: data.email,
             login_session: None,
-        }.insert(conn);
+        };
+
+        user.insert(conn).await;
         
-        Ok(constants::MESSAGE_SIGNUP_SUCCESS.to_string())
+        Ok(user)
     }
 
     pub async fn logout(
@@ -152,7 +161,7 @@ impl User {
         &self,
         conn: &SqlitePool
     ) -> Result<(), sqlx::error::Error> {
-        let deleted_user: UserId = DELETED_USER.into();
+        let deleted_user: UserId = UserId(DELETED_USER.into());
 
         sqlx::query!(
             "

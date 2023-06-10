@@ -1,11 +1,17 @@
 extern crate sqlx;
 #[macro_use]
 extern crate serde;
+#[macro_use]
+extern crate validator;
 
 use std::env;
 
 use actix_cors::Cors;
-use actix_web::{ web, App, HttpServer, http};
+use actix_web::{ 
+    App, 
+    HttpServer, 
+    http, web
+};
 use database::sqlite;
 
 pub mod config;
@@ -29,8 +35,6 @@ async fn main() -> std::io::Result<()> {
     let pool = sqlite::connect()
         .await
         .expect("Database connection failed");
-
-    let pool_ref = pool.clone();
     
     HttpServer::new(move || {
         App::new()
@@ -44,10 +48,11 @@ async fn main() -> std::io::Result<()> {
                     .allowed_header(http::header::CONTENT_TYPE)
                     .max_age(3600),
             )
-            .app_data(pool.clone())
+            .app_data(web::Data::new(pool.clone()))
             .wrap(actix_web::middleware::Logger::default())
-            .wrap(crate::middleware::auth::Authentication)
+            .wrap(crate::middleware::auth::Authenticator)
             .configure(config::app::config_services)
+            .configure(routes::config)
     })
     .bind(&app_url)?
     .run()
