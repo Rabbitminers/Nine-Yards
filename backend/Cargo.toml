@@ -12,10 +12,10 @@ features = [ "runtime-actix-rustls", "macros", "sqlite", "chrono", "decimal", "o
 
 
 [dependencies]
-actix-web = "3.3.2"
-actix-rt = "1.1.1"
+actix-web = "4.1.0"
+actix-rt = "2.7.0"
 actix-service = "1.0.6"
-actix-cors = "0.5.4"
+actix-cors = "0.6.1"
 log = "0.4.14"
 env_logger = "0.9.0"
 serde = "1.0.123"
@@ -32,6 +32,8 @@ censor = "0.3.0"
 rand = "0.8.5"
 bitflags = "1.3.2"
 thiserror = "1.0.38"
+ory-client = "1.1.33"
+validator = { version = "0.15", features = ["derive"] }
 
 [dependencies.chrono]
 version = "0.4.19"
