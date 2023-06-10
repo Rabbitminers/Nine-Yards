@@ -28,3 +28,13 @@ pub async fn verify_token(
     }
 }
 
+pub async fn is_valid_token(
+    token: String,
+    pool: &SqlitePool,
+) -> Option<User> {
+    if let Ok(token_data) = decode_token(token) {
+        verify_token(&token_data, &pool).await.ok()
+    } else {
+        None
+    }
+}
