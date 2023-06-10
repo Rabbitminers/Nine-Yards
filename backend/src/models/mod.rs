@@ -8,6 +8,7 @@ pub mod teams;
 pub mod tasks;
 pub mod login_history;
 pub mod response;
+pub mod error;
 
 #[derive(Error, Debug)]
 pub enum DatabaseError {
