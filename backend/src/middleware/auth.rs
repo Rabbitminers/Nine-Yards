@@ -1,60 +1,54 @@
-use actix_service::{Service, Transform};
+use std::rc::Rc;
+
+use actix_web::dev::{forward_ready, Service, ServiceRequest, ServiceResponse, Transform};
+use actix_web::web::Data;
 use actix_web::{
-    dev::{ServiceRequest, ServiceResponse},
-    web::Data,
-    Error, HttpResponse,
+    Error, HttpMessage
 };
-use futures::{
-    future::{ok, Ready},
-    Future,
-};
+use futures::FutureExt;
+use futures::future::{ready, LocalBoxFuture, Ready};
 use sqlx::SqlitePool;
-use std::{
-    pin::Pin,
-    task::{Context, Poll},
-};
 
-use crate::{utilities::token_utils, models::response::ResponseBody, constants};
+use crate::utilities::token_utils;
 
-pub struct Authentication;
+pub struct Authenticator;
 
-impl<S, B> Transform<S> for Authentication
+pub struct AuthenticatorMiddleware<S> {
+    service: Rc<S>
+}
+
+impl<S, B> Transform<S, ServiceRequest> for Authenticator
 where
-    S: Service<Request = ServiceRequest, Response = ServiceResponse<B>, Error = Error>,
+    S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + 'static,
     S::Future: 'static,
     B: 'static,
 {
-    type Request = ServiceRequest;
     type Response = ServiceResponse<B>;
     type Error = Error;
     type InitError = ();
-    type Transform = AuthenticationMiddleware<S>;
+    type Transform = AuthenticatorMiddleware<S>;
     type Future = Ready<Result<Self::Transform, Self::InitError>>;
 
     fn new_transform(&self, service: S) -> Self::Future {
-        ok(AuthenticationMiddleware { service })
+        ready(Ok(AuthenticatorMiddleware {
+            service: Rc::new(service)
+        }))
     }
 }
-pub struct AuthenticationMiddleware<S> {
-    service: S,
-}
 
-impl<S, B> Service for AuthenticationMiddleware<S>
+impl<S, B> Service<ServiceRequest> for AuthenticatorMiddleware<S>
 where
-    S: Service<Request = ServiceRequest, Response = ServiceResponse<B>, Error = Error>,
+    S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + 'static,
     S::Future: 'static,
     B: 'static,
 {
-    type Request = ServiceRequest;
     type Response = ServiceResponse<B>;
     type Error = Error;
-    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>>>>;
+    type Future = LocalBoxFuture<'static, Result<Self::Response, Self::Error>>;
 
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.service.poll_ready(cx)
-    }
+    forward_ready!(service);
 
-    fn call(&mut self, mut req: ServiceRequest) -> Self::Future {
+    fn call(&self, req: ServiceRequest) -> Self::Future {
         let token = req.headers()
             .get("Authorization") 
             .and_then(|h| h.to_str().ok())
@@ -64,33 +58,21 @@ where
             })
             .unwrap_or_else(String::new);
 
-        let pool = req.app_data::<Data<SqlitePool>>();
+        let pool = req.app_data::<Data<SqlitePool>>()
+            .unwrap()
+            .clone();
 
-        let token_validation_future = async move {
-            let pool = pool
-                .ok_or(actix_web::error::ErrorInternalServerError(
-                    "Missing database pool"
-                ))?;
-            let token_data = token_utils::decode_token(token)
-                .map_err(|_| {
-                    HttpResponse::Unauthorized()
-                        .json(ResponseBody::new(constants::MESSAGE_INVALID_TOKEN, constants::EMPTY))
-                })?;
+        let srv = self.service.clone();
 
-            if !token.is_empty() && token_utils::verify_token(&token_data, pool).await.is_ok() {
-                let res = self.service.call(req).await?;
-                Ok(res)
-            } else {
-                Err(HttpResponse::Unauthorized()
-                    .json(ResponseBody::new(
-                        constants::MESSAGE_INVALID_TOKEN, 
-                        constants::EMPTY
-                    ))
-                    .into()
-                )
+        async move {
+            if let Some(user) = token_utils::is_valid_token(token, &pool).await {
+                println!("Found user {}!", user.username);
+                req.extensions_mut().insert(user);
             }
-        };
-
-        Box::pin(token_validation_future)
+            println!("Ran middleware!");
+            let res = srv.call(req).await?;
+            Ok(res)
+        }
+        .boxed_local()
     }
 }
