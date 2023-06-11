@@ -6,7 +6,7 @@ macro_rules! id_type {
     ($vis:vis $function_name:ident, $struct:ty, $id_length:expr, $select_stmnt:literal, $id_function:expr) => {
         $vis async fn $function_name (
             conn: &sqlx::SqlitePool,
-        ) -> Result<$struct, super::DatabaseError> {
+        ) -> Result<$struct, super::error::ServiceError> {
             let mut retry_count = 0;
             let length = $id_length;
 
@@ -28,8 +28,14 @@ macro_rules! id_type {
                 
                 retry_count += 1;
                 if retry_count > ID_RETRY_COUNT {
-                    return Err(super::DatabaseError::RandomId)
+                    return Err(
+                        super::error::ServiceError::new(
+                            actix_web::http::StatusCode::INTERNAL_SERVER_ERROR, 
+                            format!("Failed to generate a unique id after {} tries", retry_count)
+                        )
+                    );
                 }
+
             }
             
             Ok($id_function(id))
@@ -38,46 +44,35 @@ macro_rules! id_type {
 }
 
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct TeamId(pub String);
-
-id_type!(
-    pub generate_team_id,
-    TeamId, 
-    8,
-    "SELECT COUNT(*) as count FROM users WHERE id = ?",
-    TeamId
-);
-
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UserId(pub String);
 
 id_type!(
     pub generate_user_id,
     UserId, 
     10,
-    "SELECT COUNT(*) as count FROM teams WHERE id = ?",
+    "SELECT COUNT(*) as count FROM users WHERE id = ?",
     UserId
 );
 
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct TeamMemberId(pub String);
+pub struct ProjectMemberId(pub String);
 
 id_type!(
-    pub generate_team_member_id,
-    TeamMemberId, 
+    pub generate_project_member_id,
+    ProjectMemberId, 
     10,
-    "SELECT COUNT(*) as count FROM team_members WHERE id = ?",
-    TeamMemberId
+    "SELECT COUNT(*) as count FROM project_members WHERE id = ?",
+    ProjectMemberId
 );
 
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProjectId(pub String);
 
 id_type!(
-    pub generate_project_member_id,
+    pub generate_project_id,
     ProjectId, 
     10,
-    "SELECT COUNT(*) as count FROM team_members WHERE id = ?",
+    "SELECT COUNT(*) as count FROM projects WHERE id = ?",
     ProjectId
 );
 

@@ -41,14 +41,18 @@ impl TaskGroup {
             Err(_) => return Err(constants::MESSAGE_INTERNAL_SERVER_ERROR.to_string()),
         };
 
-        TaskGroup {
+        let group = TaskGroup {
             id: group_id,
             project_id: data.project_id,
             name: data.name,
             position: data.position
-        }.insert(conn);
+        };
 
-        Ok(constants::MESSAGE_CREATE_TASK_GROUP_SUCCESS.to_string())
+        if group.insert(conn).await.is_ok() {
+            Ok(constants::MESSAGE_CREATE_TASK_GROUP_SUCCESS.to_string())
+        } else {
+            Err(constants::MESSAGE_INTERNAL_SERVER_ERROR.to_string())
+        }
     }
 
     pub async fn find_by_name(

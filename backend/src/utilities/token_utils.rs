@@ -21,7 +21,7 @@ pub async fn verify_token(
     token_data: &TokenData<UserToken>,
     pool: &SqlitePool,
 ) -> Result<User, String> {
-    if let Ok(Some(user)) = User::get_user_from_login_session(&token_data.claims, &pool).await {
+    if let Ok(Some(user)) = User::find_by_login_session(&token_data.claims, &pool).await {
         Ok(user)
     } else {
         Err("Invalid token".to_string())

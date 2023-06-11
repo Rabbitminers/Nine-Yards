@@ -1,10 +1,11 @@
+use actix_web::{HttpRequest, HttpMessage, http::StatusCode};
 use bcrypt::{DEFAULT_COST, hash, verify};
-use sqlx::SqlitePool;
+use sqlx::{SqlitePool, Sqlite};
 use uuid::Uuid;
 use validator::Validate;
-use crate::{constants, models::{ids::generate_user_id, login_history::LoginHistory}};
+use crate::{constants, models::{ids::generate_user_id, login_history::LoginHistory}, service_error};
 
-use super::{ids::UserId, user_token::UserToken};
+use super::{ids::UserId, user_token::UserToken, error::ServiceError};
 
 pub const DELETED_USER: &str ="7102222d-b551-46e6-b1cf-44a67a05aace";
 
@@ -28,11 +29,14 @@ pub struct Register {
     pub email: String
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct Login {
-    pub username: String,
+    pub username_or_email: String,
     pub password: String
 }
 
+
+#[derive(Serialize, Deserialize)]
 pub struct LoginSession {
     pub username: String,
     pub login_session: String,
@@ -42,20 +46,18 @@ impl User {
     pub async fn register(
         data: Register, 
         conn: &SqlitePool
-    ) -> Result<User, String> {        
+    ) -> Result<User, ServiceError> {        
         // Check if the username is already used
         if let Ok(Some(_)) = Self::find_by_username(&data.username, conn).await {
-            return Err(format!("User '{}' is already registered", &data.username));
+            return Err(service_error!(
+                StatusCode::BAD_REQUEST, 
+                "User '{}' is already registered", &data.username
+            ));
         }
 
         // Generate password hash and new user id
         let hashed_pwd = hash(&data.password, DEFAULT_COST).unwrap();
-        let user_id = generate_user_id(conn).await;
-        
-        let user_id = match user_id {
-            Ok(generated_id) => generated_id,
-            Err(_) => return Err(constants::MESSAGE_INTERNAL_SERVER_ERROR.to_string()),
-        };
+        let user_id = generate_user_id(conn).await?;
         
         let user: User = User {
             id: user_id,
@@ -65,7 +67,7 @@ impl User {
             login_session: None,
         };
 
-        user.insert(conn).await;
+        user.insert(conn).await?;
         
         Ok(user)
     }
@@ -165,7 +167,7 @@ impl User {
 
         sqlx::query!(
             "
-            UPDATE team_members
+            UPDATE project_members
             SET user_id = $1
             WHERE user_id = $2
             ",
@@ -220,7 +222,7 @@ impl User {
         Ok(())
     }
 
-    pub async fn get_user_from_login_session(
+    pub async fn find_by_login_session(
         token: &UserToken,
         conn: &SqlitePool
     ) -> Result<Option<Self>, sqlx::error::Error> {
@@ -278,6 +280,46 @@ impl User {
         }
     }
 
+    pub async fn find_by_id(
+        user_id: UserId,
+        conn: &SqlitePool
+    ) -> Result<Option<Self>, sqlx::error::Error> {
+        let result = sqlx::query!(
+            "
+            SELECT id, username, password, 
+                   email, login_session
+            FROM users
+            WHERE id = $1
+            ",
+            user_id.0
+        )
+        .fetch_optional(conn)
+        .await?;
+
+        if let Some(row) = result {
+            Ok(Some(Self {
+                id: UserId(row.id),
+                username: row.username,
+                password: row.password,
+                email: row.email,
+                login_session: row.login_session
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+    
+
+    pub async fn from_request(
+        req: HttpRequest,
+        conn: &SqlitePool
+    ) -> Result<Option<Self>, sqlx::error::Error> {
+        if let Some(user_id) = req.extensions().get::<UserId>() {
+            return Ok(Self::find_by_id(user_id.clone(), conn).await?);
+        }
+        Ok(None)
+    }
+
     pub fn generate_login_session() -> String {
         Uuid::new_v4().to_simple().to_string()
     }
@@ -296,7 +338,7 @@ impl Login {
             WHERE username = $1
             OR email = $2
             ",
-            self.username,
+            self.username_or_email,
             self.password
         )
         .fetch_optional(conn)

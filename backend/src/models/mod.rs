@@ -4,10 +4,8 @@ pub mod users;
 pub mod user_token;
 pub mod projects;
 pub mod ids;
-pub mod teams;
 pub mod tasks;
 pub mod login_history;
-pub mod response;
 pub mod error;
 
 #[derive(Error, Debug)]
