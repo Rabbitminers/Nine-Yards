@@ -1,20 +1,12 @@
-use super::{
-    ids::{
-        ProjectId, 
-        TaskGroupId, 
-        TaskId, 
-        UserId, generate_project_id, ProjectMemberId
-    }, 
-    tasks::{
-        TaskGroup, 
-        Task
-    }, 
-    error::ServiceError
-};
-
-use futures::{TryStreamExt};
+use crate::service_error;
+use super::ids::{ProjectId, TaskGroupId, TaskId, UserId, ProjectMemberId, generate_project_id, generate_project_member_id};
+use super::tasks::{TaskGroup, Task};
+use super::error::ServiceError;
+use actix_web::http::StatusCode;
+use futures::TryStreamExt;
 use sqlx::SqlitePool;
 
+#[derive(Serialize, Deserialize)]
 pub struct Project {
     id: ProjectId,
     name: String,
@@ -22,37 +14,11 @@ pub struct Project {
     icon_url: String
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct ProjectBuilder {
     name: String,
     creator: UserId, // Used to create a team
     icon_url: String
-}
-
-bitflags::bitflags! {
-    #[derive(Serialize, Deserialize)]
-    #[serde(transparent)]
-    pub struct Permissions: u64 {
-        const MANAGE_TASKS = 1 << 0;
-        const MANAGE_PROJECT = 1 << 1;
-        const MANAGE_TEAM = 1 << 2;
-        const ALL = Self::MANAGE_TASKS.bits 
-            | Self::MANAGE_PROJECT.bits
-            | Self::MANAGE_TEAM.bits;
-    }
-}
-
-impl Default for Permissions {
-    fn default() -> Permissions {
-        Permissions::MANAGE_TASKS
-    }
-}
-
-pub struct ProjectMember {
-    pub id: ProjectMemberId,
-    pub project_id: ProjectId,
-    pub user_id: UserId,
-    pub permissions: Permissions,
-    pub accepted: bool,
 }
 
 impl Project {
@@ -65,11 +31,13 @@ impl Project {
         let project: Project = Project{
             id: project_id,
             name: data.name,
-            owner: data.creator,
+            owner: data.creator.clone(),
             icon_url: data.icon_url,
         };
 
-        project.insert(conn).await;
+        ProjectMember::create(data.creator, &project, conn).await?;
+
+        project.insert(conn).await?;
         Ok(project)
     }
 
@@ -216,4 +184,143 @@ impl Project {
 
         Ok(tasks)
     }   
+}
+
+bitflags::bitflags! {
+    #[derive(Serialize, Deserialize)]
+    #[serde(transparent)]
+    pub struct Permissions: u64 {
+        const MANAGE_TASKS = 1 << 0;
+        const MANAGE_PROJECT = 1 << 1;
+        const MANAGE_TEAM = 1 << 2;
+        const ALL = Self::MANAGE_TASKS.bits 
+            | Self::MANAGE_PROJECT.bits
+            | Self::MANAGE_TEAM.bits;
+    }
+}
+
+impl Default for Permissions {
+    fn default() -> Permissions {
+        Permissions::MANAGE_TASKS
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct ProjectMember {
+    pub id: ProjectMemberId,
+    pub project_id: ProjectId,
+    pub user_id: UserId,
+    pub permissions: Permissions,
+    pub accepted: bool,
+}
+
+impl ProjectMember {
+    pub async fn create(
+        user: UserId,
+        project: &Project,
+        conn: &SqlitePool
+    ) -> Result<ProjectMember, ServiceError> {
+        if project.owner.0 != user.0 {
+            return Err(service_error!(StatusCode::UNAUTHORIZED, "User is not owner of project"));
+        }
+
+        let member_id = generate_project_member_id(conn).await?;
+
+        let member = ProjectMember {
+            id: member_id,
+            project_id: project.id.clone(),
+            user_id: user,
+            permissions: Permissions::all(),
+            accepted: true,
+        };
+
+        member.insert(conn).await?;
+
+        Ok(member)
+    }
+
+    pub async fn invite(
+        user: UserId,
+        project: ProjectId,
+        conn: &SqlitePool
+    ) -> Result<ProjectMember, ServiceError> {
+        let member_id = generate_project_member_id(conn).await?;
+
+        let member = ProjectMember {
+            id: member_id,
+            project_id: project,
+            user_id: user,
+            permissions: Permissions::default(),
+            accepted: false,
+        };
+
+        member.insert(conn).await?;
+
+        Ok(member)
+    }
+
+    pub async fn insert(
+        &self,
+        conn: &SqlitePool
+    ) -> Result<(), sqlx::error::Error> {
+        let permssions = self.permissions.bits() as i64;
+
+        sqlx::query!(
+            "
+            INSERT INTO project_members (
+                id, project_id, user_id,
+                permissions, accepted
+            )
+            VALUES (
+                $1, $2, $3, $4, $5
+            )
+            ",
+            self.id.0,
+            self.project_id.0,
+            self.user_id.0,
+            permssions,
+            self.accepted
+        )
+        .execute(conn)
+        .await?;
+
+        Ok(())
+    }
+
+    pub async fn accept_invitation(
+        &self,
+        conn: &SqlitePool
+    ) -> Result<(), sqlx::error::Error> {
+        sqlx::query!(
+            "
+            UPDATE project_members
+            SET accepted = true
+            WHERE id = $1
+            ",
+            self.id.0
+        )
+        .execute(conn)
+        .await?;
+
+        Ok(())
+    }
+
+    pub async fn deny_invitation(
+        &self,
+        conn: &SqlitePool
+    ) -> Result<(), sqlx::error::Error> {
+        sqlx::query!(
+            "
+            DELETE FROM project_members
+            WHERE id = $1
+            ",
+            self.id.0
+        )
+        .execute(conn)
+        .await?;
+
+        // TODO delete invitation notification
+
+        Ok(())
+    }
 }
