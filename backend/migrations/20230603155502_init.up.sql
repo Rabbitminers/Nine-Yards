@@ -14,13 +14,9 @@ CREATE TABLE IF NOT EXISTS login_history (
     login_timestamp TEXT
 );
 
-CREATE TABLE IF NOT EXISTS teams (
-    id TEXT PRIMARY KEY NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS team_members (
+CREATE TABLE IF NOT EXISTS project_members (
     id TEXT PRIMARY KEY NOT NULL,
-    team_id TEXT REFERENCES teams NOT NULL,
+    project_id TEXT REFERENCES projects NOT NULL,
     user_id TEXT REFERENCES users NOT NULL,
     permissions INTEGER NOT NULL,
     accepted BOOLEAN NOT NULL,
@@ -29,8 +25,8 @@ CREATE TABLE IF NOT EXISTS team_members (
 
 CREATE TABLE IF NOT EXISTS projects (
     id TEXT PRIMARY KEY NOT NULL,
-    team_id TEXT REFERENCES teams NOT NULL,
     name TEXT NOT NULL,
+    owner TEXT REFERENCES users NOT NULL,
     icon_url TEXT NOT NULL
 );
 
