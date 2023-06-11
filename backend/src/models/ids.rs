@@ -14,7 +14,7 @@ macro_rules! id_type {
             let mut id;
 
             loop {
-                id = Uuid::new_v4().to_string();
+                id = Uuid::new_v4().to_simple().to_string();
 
                 let results = sqlx::query!($select_stmnt, id)
                     .fetch_one(conn)
