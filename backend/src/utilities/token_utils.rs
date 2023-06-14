@@ -33,7 +33,10 @@ pub async fn is_valid_token(
     pool: &SqlitePool,
 ) -> Option<User> {
     if let Ok(token_data) = decode_token(token) {
-        verify_token(&token_data, &pool).await.ok()
+        match verify_token(&token_data, &pool).await {
+            Ok(user) => Some(user),
+            Err(_) => None
+        }
     } else {
         None
     }
