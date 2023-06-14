@@ -72,3 +72,12 @@ impl From<sqlx::error::Error> for ServiceError {
         )   
     }
 }
+
+impl From<super::DatabaseError> for ServiceError {
+    fn from(error: super::DatabaseError) -> ServiceError {
+        Self::new(
+        StatusCode::INTERNAL_SERVER_ERROR,
+        format!("{}", error)
+        )
+    }
+}
