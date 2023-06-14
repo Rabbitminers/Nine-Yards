@@ -66,10 +66,8 @@ where
 
         async move {
             if let Some(user) = token_utils::is_valid_token(token, &pool).await {
-                println!("Found user {}!", user.username);
-                req.extensions_mut().insert(user);
+                req.extensions_mut().insert(user.id);
             }
-            println!("Ran middleware!");
             let res = srv.call(req).await?;
             Ok(res)
         }

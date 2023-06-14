@@ -30,6 +30,6 @@ pub async fn connect() -> Result<SqlitePool, sqlx::Error> {
         .max_lifetime(Some(Duration::from_secs(60 * 60)))
         .connect(&database_url)
         .await?;
-
+    
     Ok(pool)
 }   
