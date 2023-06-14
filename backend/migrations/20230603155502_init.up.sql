@@ -19,8 +19,7 @@ CREATE TABLE IF NOT EXISTS project_members (
     project_id TEXT REFERENCES projects NOT NULL,
     user_id TEXT REFERENCES users NOT NULL,
     permissions INTEGER NOT NULL,
-    accepted BOOLEAN NOT NULL,
-    member_name TEXT NOT NULL
+    accepted BOOLEAN NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS projects (
@@ -50,5 +49,8 @@ CREATE TABLE IF NOT EXISTS tasks (
 
 CREATE TABLE IF NOT EXISTS notifications (
     id TEXT PRIMARY KEY NOT NULL,
-    user_id TEXT REFERENCES users NOT NULL
+    recipient TEXT REFERENCES users NOT NULL,
+    body TEXT NOT NULL,
+    notification_type TEXT NOT NULL,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
