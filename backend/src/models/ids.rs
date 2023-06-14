@@ -6,7 +6,7 @@ macro_rules! id_type {
     ($vis:vis $function_name:ident, $struct:ty, $id_length:expr, $select_stmnt:literal, $id_function:expr) => {
         $vis async fn $function_name (
             conn: &sqlx::SqlitePool,
-        ) -> Result<$struct, super::error::ServiceError> {
+        ) -> Result<$struct, super::DatabaseError> {
             let mut retry_count = 0;
             let length = $id_length;
 
@@ -28,12 +28,7 @@ macro_rules! id_type {
                 
                 retry_count += 1;
                 if retry_count > ID_RETRY_COUNT {
-                    return Err(
-                        super::error::ServiceError::new(
-                            actix_web::http::StatusCode::INTERNAL_SERVER_ERROR, 
-                            format!("Failed to generate a unique id after {} tries", retry_count)
-                        )
-                    );
+                    return Err(super::DatabaseError::RandomId);
                 }
 
             }
@@ -108,4 +103,16 @@ id_type!(
     "SELECT COUNT(*) as count FROM login_history WHERE id = ?",
     LoginHistoryId
 );
+
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NotifcationId(pub String);
+
+id_type!(
+    pub generate_notification_id,
+    NotifcationId,
+    8,
+    "SELECT COUNT(*) as count FROM notifications WHERE id = ?",
+    NotifcationId
+);
+
 
