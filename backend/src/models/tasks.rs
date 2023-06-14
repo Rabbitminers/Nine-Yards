@@ -1,6 +1,5 @@
+use actix_web::http::StatusCode;
 use sqlx::SqlitePool;
-
-use crate::constants;
 
 use super::{
     ids::{
@@ -10,7 +9,7 @@ use super::{
         UserId, 
         generate_task_group_id
     }, 
-    users::User
+    users::User, error::ServiceError
 };
 
 pub struct TaskGroup {
@@ -27,34 +26,34 @@ pub struct TaskGroupBuilder {
     pub position: i64 // Got to have room for your 9223372036854775807 task groups!
 }
 
-impl TaskGroup {
+impl TaskGroupBuilder {
     pub async fn create(
-        data: TaskGroupBuilder,
+        &self,
         conn: &SqlitePool
-    ) -> Result<String, String> {
-        if let Ok(Some(_)) = Self::find_by_name(&data.name, conn).await {
-            return Err(format!("A task group with name '{}' already exists", &data.name));
+    ) -> Result<TaskGroup, super::error::ServiceError> {
+        if let Ok(Some(_)) = TaskGroup::find_by_name(&self.name, conn).await {
+            return Err(ServiceError::new(
+                StatusCode::BAD_REQUEST,
+                format!("A task group with name '{}' already exists", &self.name)
+            ));
         }
 
-        let group_id = match generate_task_group_id(conn).await {
-            Ok(generated_id) => generated_id,
-            Err(_) => return Err(constants::MESSAGE_INTERNAL_SERVER_ERROR.to_string()),
-        };
+        let id = generate_task_group_id(&conn).await?;
 
         let group = TaskGroup {
-            id: group_id,
-            project_id: data.project_id,
-            name: data.name,
-            position: data.position
+            id,
+            project_id: self.project_id.clone(),
+            name: self.name.clone(),
+            position: self.position
         };
 
-        if group.insert(conn).await.is_ok() {
-            Ok(constants::MESSAGE_CREATE_TASK_GROUP_SUCCESS.to_string())
-        } else {
-            Err(constants::MESSAGE_INTERNAL_SERVER_ERROR.to_string())
-        }
+        group.insert(conn).await?;
+        
+        Ok(group)
     }
+}
 
+impl TaskGroup {
     pub async fn find_by_name(
         name: &String,
         conn: &SqlitePool

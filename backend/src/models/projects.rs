@@ -1,8 +1,6 @@
-use crate::service_error;
 use super::ids::{ProjectId, TaskGroupId, TaskId, UserId, ProjectMemberId, generate_project_id, generate_project_member_id};
 use super::tasks::{TaskGroup, Task};
 use super::error::ServiceError;
-use actix_web::http::StatusCode;
 use futures::TryStreamExt;
 use sqlx::SqlitePool;
 
@@ -14,10 +12,11 @@ pub struct Project {
     icon_url: String
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Validate)]
 pub struct ProjectBuilder {
+    #[validate(length(min = 3, max = 30))]
     name: String,
-    creator: UserId, // Used to create a team
+    creator: UserId, 
     icon_url: String
 }
 
@@ -25,7 +24,7 @@ impl Project {
     pub async fn create(
         data: ProjectBuilder,
         conn: &SqlitePool
-    ) -> Result<Project, ServiceError> {
+    ) -> Result<Project, super::DatabaseError> {
         let project_id = generate_project_id(conn).await?;
 
         let project: Project = Project{
@@ -41,7 +40,7 @@ impl Project {
         Ok(project)
     }
 
-    pub async fn insert(
+    async fn insert(
         &self,
         conn: &SqlitePool
     ) -> Result<(), sqlx::error::Error> {   
@@ -183,7 +182,7 @@ impl Project {
         .await?;
 
         Ok(tasks)
-    }   
+    }
 }
 
 bitflags::bitflags! {
@@ -219,9 +218,9 @@ impl ProjectMember {
         user: UserId,
         project: &Project,
         conn: &SqlitePool
-    ) -> Result<ProjectMember, ServiceError> {
+    ) -> Result<ProjectMember, super::DatabaseError> {
         if project.owner.0 != user.0 {
-            return Err(service_error!(StatusCode::UNAUTHORIZED, "User is not owner of project"));
+            return Err(super::DatabaseError::AlreadyExists);
         }
 
         let member_id = generate_project_member_id(conn).await?;
@@ -318,8 +317,6 @@ impl ProjectMember {
         )
         .execute(conn)
         .await?;
-
-        // TODO delete invitation notification
 
         Ok(())
     }
