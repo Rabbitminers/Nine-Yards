@@ -1,9 +1,9 @@
 use actix_web::{HttpRequest, HttpMessage, http::StatusCode};
 use bcrypt::{DEFAULT_COST, hash, verify};
-use sqlx::{SqlitePool, Sqlite};
+use sqlx::SqlitePool;
 use uuid::Uuid;
 use validator::Validate;
-use crate::{constants, models::{ids::generate_user_id, login_history::LoginHistory}, service_error};
+use crate::{models::{ids::generate_user_id, login_history::LoginHistory}, service_error};
 
 use super::{ids::UserId, user_token::UserToken, error::ServiceError};
 
@@ -127,6 +127,19 @@ impl User {
         
         let session = Self::generate_login_session();
 
+        sqlx::query!(
+            "
+            UPDATE users
+            SET login_session = $1
+            WHERE id = $2
+            ",
+            session,
+            user.id.0,
+        )
+        .execute(conn)
+        .await?;
+        
+
         Ok(Some(LoginSession {
             username: user.username,
             login_session: session
@@ -180,7 +193,7 @@ impl User {
         sqlx::query!(
             "
             DELETE FROM notifications
-            WHERE user_id = $1
+            WHERE recipient = $1
             ",
             self.id.0
         )
