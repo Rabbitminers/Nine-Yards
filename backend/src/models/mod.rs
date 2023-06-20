@@ -6,7 +6,6 @@ pub mod projects;
 pub mod ids;
 pub mod tasks;
 pub mod login_history;
-pub mod error;
 pub mod notifications;
 
 #[derive(Error, Debug)]
