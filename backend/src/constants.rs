@@ -10,6 +10,8 @@ pub const ERROR_USERNAME: &str = "User name is already used";
 pub const MESSAGE_SIGNUP_SUCCESS: &str = "Signup successfully";
 pub const MESSAGE_CREATE_TASK_GROUP_SUCCESS: &str = "Created new board successfully!";
 
+pub const MESSAGE_ALREADY_LOGGED_IN: &str= "Already logged in!";
+
 // Project Messages
 pub const MESSAGE_CREATE_PROJECT_SUCCESS: &str = "Created new project successfully!";
 pub const MESSAGE_UPDATE_PROJECT_SUCCESS: &str = "Updated project successfully!";
