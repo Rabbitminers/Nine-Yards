@@ -3,9 +3,7 @@ use sqlx::SqlitePool;
 use sqlx;
 
 use crate::database::DatabaseError;
-
-use super::error::ServiceError;
-use super::ids::{NotifcationId, UserId, generate_notification_id, ProjectId, TaskId};
+use super::ids::{NotifcationId, UserId, ProjectId, TaskId};
 
 #[derive(Serialize, Deserialize)]
 pub struct Notification {
@@ -55,7 +53,7 @@ impl NotificationBuilder {
         &self,
         recipient: UserId,
         conn: &SqlitePool
-    ) -> Result<(), ServiceError> {
+    ) -> Result<(), super::DatabaseError> {
         self.create_many(vec![recipient], conn).await
     }
 
@@ -63,9 +61,9 @@ impl NotificationBuilder {
         &self,
         recipients: Vec<UserId>,
         conn: &SqlitePool
-    ) -> Result<(), ServiceError> {
+    ) -> Result<(), super::DatabaseError> {
         for recipient in recipients {
-            let id = generate_notification_id(conn).await?;
+            let id = NotifcationId::generate(conn).await?;
 
             Notification {
                 id,
@@ -97,8 +95,8 @@ impl Notification {
                 $1, $2, $3, $4
             )
             ",
-            self.id.0,
-            self.recipient.0,
+            self.id,
+            self.recipient,
             self.body,
             notification_type
         )
@@ -119,7 +117,7 @@ impl Notification {
             FROM NOTIFICATIONS
             WHERE id = $1
             ",
-            notification_id.0
+            notification_id
         )
         .fetch_optional(conn)
         .await?;

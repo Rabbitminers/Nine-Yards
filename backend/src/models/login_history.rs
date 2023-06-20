@@ -3,7 +3,7 @@ use sqlx::SqlitePool;
 
 use super::{ids::{
     UserId, 
-    LoginHistoryId, generate_login_history_id
+    LoginHistoryId,
 }, users::User};
 
 pub struct LoginHistory {
@@ -18,11 +18,9 @@ impl LoginHistory {
         conn: &SqlitePool
     ) -> Option<LoginHistory> {
         if let Ok(Some(user)) = User::find_by_username(username, conn).await {
-            let history_id = match generate_login_history_id(conn).await {
-                Ok(history_id) => history_id,
-                Err(_) => return None
-            };
+            let history_id = LoginHistoryId::generate(conn).await.ok()?;
             let now = Utc::now();
+
             Some(LoginHistory {
                 id: history_id,
                 user_id: user.id,
@@ -46,8 +44,8 @@ impl LoginHistory {
                 $1, $2, $3
             )
             ",
-            self.id.0,
-            self.user_id.0,
+            self.id,
+            self.user_id,
             self.login_timestamp
         )
         .execute(conn)
