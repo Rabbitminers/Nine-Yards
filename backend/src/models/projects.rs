@@ -1,45 +1,62 @@
-use super::ids::{ProjectId, TaskGroupId, TaskId, UserId, ProjectMemberId, generate_project_id, generate_project_member_id};
+use super::ids::{ProjectId, TaskGroupId, TaskId, UserId, ProjectMemberId};
 use super::tasks::{TaskGroup, Task};
-use super::error::ServiceError;
+use actix_web::HttpRequest;
 use futures::TryStreamExt;
 use sqlx::SqlitePool;
+use actix_web::HttpMessage;
 
 #[derive(Serialize, Deserialize)]
 pub struct Project {
-    id: ProjectId,
-    name: String,
-    owner: UserId,
-    icon_url: String
+    pub id: ProjectId,
+    pub name: String,
+    pub owner: UserId,
+    pub icon_url: String,
+    pub public: bool
 }
 
 #[derive(Serialize, Deserialize, Validate)]
 pub struct ProjectBuilder {
     #[validate(length(min = 3, max = 30))]
     name: String,
-    creator: UserId, 
-    icon_url: String
+    icon_url: String,
+    public: bool
+}
+
+impl ProjectBuilder {
+    pub async fn create(
+        &self,
+        creator: UserId,
+        conn: &SqlitePool
+    ) -> Result<ProjectId, super::DatabaseError> {
+        let id = ProjectId::generate(conn).await?;
+
+        let project = Project {
+            id,
+            name: self.name.clone(),
+            owner: creator.clone(),
+            icon_url: self.icon_url.clone(),
+            public: self.public
+        };
+
+        project.insert(conn).await?;
+
+        let id = ProjectMemberId::generate(conn).await?;
+
+        let project_member = ProjectMember {
+            id,
+            project_id: project.id.clone(),
+            user_id: creator,
+            permissions: Permissions::all(),
+            accepted: true
+        };
+
+        project_member.insert(conn).await?;
+
+        Ok(project.id)
+    }
 }
 
 impl Project {
-    pub async fn create(
-        data: ProjectBuilder,
-        conn: &SqlitePool
-    ) -> Result<Project, super::DatabaseError> {
-        let project_id = generate_project_id(conn).await?;
-
-        let project: Project = Project{
-            id: project_id,
-            name: data.name,
-            owner: data.creator.clone(),
-            icon_url: data.icon_url,
-        };
-
-        ProjectMember::create(data.creator, &project, conn).await?;
-
-        project.insert(conn).await?;
-        Ok(project)
-    }
-
     async fn insert(
         &self,
         conn: &SqlitePool
@@ -53,15 +70,61 @@ impl Project {
                 $1, $2, $3, $4
             )
             ",
-            self.id.0,
+            self.id,
             self.name,
-            self.owner.0,
+            self.owner,
             self.icon_url
         )
         .execute(conn)
         .await?;
 
         Ok(())
+    }
+
+    pub async fn get(
+        id: ProjectId,
+        conn: &SqlitePool
+    ) -> Result<Option<Self>, sqlx::error::Error> {
+        let query = sqlx::query!(
+            "
+            SELECT id, name, owner,
+                   icon_url, public
+            FROM projects
+            WHERE id = $1
+            ",
+            id
+        )
+        .fetch_optional(conn)
+        .await?;
+
+        if let Some(row) = query {
+            Ok(Some(Self {
+               id: ProjectId(row.id),
+               name: row.name,
+               owner: UserId(row.owner),
+               icon_url: row.icon_url,
+               public: row.public
+            }))
+        } else  {
+            Ok(None)
+        }
+    }
+
+    pub async fn from_user(
+        id: UserId,
+        conn: &SqlitePool
+    ) -> Result<Vec<Self>, sqlx::error::Error> {
+        let memberships = ProjectMember::from_user(id, conn).await?;
+
+        let mut projects: Vec<Self> = vec![];
+
+        for member in memberships {
+            if let Some(project) = Self::get(member.project_id, conn).await? {
+                projects.push(project)
+            }
+        }
+
+        Ok(projects)
     }
 
     pub async fn remove(
@@ -79,7 +142,7 @@ impl Project {
             DELETE FROM project_members
             WHERE project_id = $1
             ",
-            self.id.0
+            self.id
         )
         .execute(conn)
         .await?;
@@ -89,7 +152,7 @@ impl Project {
             DELETE FROM projects
             WHERE id = $1
             ",
-            self.id.0
+            self.id
         )
         .execute(conn)
         .await?;
@@ -108,7 +171,7 @@ impl Project {
             FROM project_members 
             WHERE project_id = ?
             ",
-            self.id.0
+            self.id
         )
         .fetch_many(conn)
         .try_filter_map(|e| async {
@@ -136,7 +199,7 @@ impl Project {
             FROM task_groups
             WHERE project_id = $1
             ",
-            self.id.0
+            self.id
         )
         .fetch_many(conn)
         .try_filter_map(|e| async {
@@ -159,23 +222,26 @@ impl Project {
     ) -> Result<Vec<Task>, sqlx::error::Error> {
         let tasks = sqlx::query!(
             "
-            SELECT id, project_id, task_group_id,
-            name, information, creator, assignee
+            SELECT id, project_id, task_group_id, 
+                 name, information, creator, due, 
+                 primary_colour, accent_colour
             FROM tasks
             WHERE project_id = $1
             ",
-            self.id.0
+            self.id
         )
         .fetch_many(conn)
-        .try_filter_map(|e| async {
-            Ok(e.right().map(|m| Task {
-                id: TaskId(m.id),
-                project_id: ProjectId(m.project_id),
-                task_group_id: TaskGroupId(m.task_group_id),
-                name: m.name,
-                information: m.information,
-                creator: UserId(m.creator),
-                assignee: UserId(m.assignee)
+        .try_filter_map(|result| async {
+            Ok(result.right().map(|row| Task {
+                id: TaskId(row.id),
+                project_id: ProjectId(row.project_id),
+                task_group_id: TaskGroupId(row.task_group_id),
+                name: row.name,
+                information: row.information,
+                creator: UserId(row.creator),
+                due: row.due,
+                primary_colour: row.primary_colour,
+                accent_colour: row.accent_colour,
             }))
         })
         .try_collect::<Vec<Task>>()
@@ -213,6 +279,13 @@ pub struct ProjectMember {
     pub accepted: bool,
 }
 
+
+#[derive(Serialize, Deserialize)]
+pub struct ProjectInvitation {
+    pub user: UserId,
+    pub project: ProjectId,
+}
+
 impl ProjectMember {
     pub async fn create(
         user: UserId,
@@ -223,7 +296,7 @@ impl ProjectMember {
             return Err(super::DatabaseError::AlreadyExists);
         }
 
-        let member_id = generate_project_member_id(conn).await?;
+        let member_id = ProjectMemberId::generate(conn).await?;
 
         let member = ProjectMember {
             id: member_id,
@@ -239,16 +312,35 @@ impl ProjectMember {
     }
 
     pub async fn invite(
-        user: UserId,
-        project: ProjectId,
+        invitation: ProjectInvitation,
         conn: &SqlitePool
-    ) -> Result<ProjectMember, ServiceError> {
-        let member_id = generate_project_member_id(conn).await?;
+    ) -> Result<ProjectMember, super::DatabaseError> {
+        let query = sqlx::query!(
+            "
+            SELECT EXISTS (
+                SELECT 1
+                FROM project_members
+                WHERE user_id = $1 
+                AND project_id = $2
+            ) 
+            AS member_exists
+            ",
+            invitation.user.0,
+            invitation.project.0
+        )
+        .fetch_one(conn)
+        .await?;
+
+        if query.member_exists.is_positive() {
+            return Err(super::DatabaseError::AlreadyExists);
+        }
+
+        let member_id = ProjectMemberId::generate(conn).await?;
 
         let member = ProjectMember {
             id: member_id,
-            project_id: project,
-            user_id: user,
+            project_id: invitation.project,
+            user_id: invitation.user,
             permissions: Permissions::default(),
             accepted: false,
         };
@@ -256,6 +348,100 @@ impl ProjectMember {
         member.insert(conn).await?;
 
         Ok(member)
+    }
+
+    pub async fn from_request(
+        req: HttpRequest,
+        conn: &SqlitePool
+    ) -> Result<Option<Self>, super::DatabaseError> {
+        if let Some(id) = req.extensions().get::<ProjectMemberId>() {
+            let query = sqlx::query!(
+                "
+                SELECT id, project_id,
+                user_id, permissions, 
+                accepted
+                FROM project_members
+                WHERE id = $1
+                ",
+                id
+            )
+            .fetch_optional(conn)
+            .await?;
+
+            if let Some(row) = query {
+                return Ok(Some(Self {
+                    id: ProjectMemberId(row.id),
+                    project_id: ProjectId(row.project_id),
+                    user_id: UserId(row.user_id),
+                    permissions: Permissions::from_bits(row.permissions as u64).unwrap_or_default(),
+                    accepted: row.accepted,
+                }))
+            }
+        }
+        Ok(None)
+    }
+
+    pub async fn from_user_for_project(
+        user: UserId,
+        project: ProjectId,
+        conn: &SqlitePool
+    ) -> Result<Option<Self>, sqlx::error::Error> {
+        let query = sqlx::query!(
+            "
+            SELECT id, project_id,
+                user_id, permissions, 
+                accepted
+            FROM project_members
+            WHERE user_id = $1
+            AND project_id = $2
+            ",
+            user.0,
+            project.0
+        )
+        .fetch_optional(conn)
+        .await?;
+
+        if let Some(row) = query {
+            Ok(Some(Self {
+                id: ProjectMemberId(row.id),
+                project_id: ProjectId(row.project_id),
+                user_id: UserId(row.user_id),
+                permissions: Permissions::from_bits(row.permissions as u64).unwrap_or_default(),
+                accepted: row.accepted,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub async fn from_user(
+        user: UserId,
+        conn: &SqlitePool
+    ) -> Result<Vec<Self>, sqlx::error::Error> {
+        let query = sqlx::query!(
+            "
+            SELECT id, project_id,
+                user_id, permissions, 
+                accepted
+            FROM project_members
+            WHERE user_id = $1
+            ",
+            user.0
+        )
+        .fetch_many(conn)
+        .try_filter_map(|e| async {
+            Ok(e.right().map(|m| Self {
+                id: ProjectMemberId(m.id),
+                project_id: ProjectId(m.project_id),
+                user_id: UserId(m.user_id),
+                permissions: Permissions::from_bits(m.permissions as u64).unwrap_or_default(),
+                accepted: m.accepted,
+            }))
+        })
+        .try_collect::<Vec<Self>>()
+        .await?;
+
+        Ok(query)
     }
 
     pub async fn insert(
@@ -274,9 +460,9 @@ impl ProjectMember {
                 $1, $2, $3, $4, $5
             )
             ",
-            self.id.0,
-            self.project_id.0,
-            self.user_id.0,
+            self.id,
+            self.project_id,
+            self.user_id,
             permssions,
             self.accepted
         )
@@ -296,7 +482,7 @@ impl ProjectMember {
             SET accepted = true
             WHERE id = $1
             ",
-            self.id.0
+            self.id
         )
         .execute(conn)
         .await?;
@@ -313,7 +499,7 @@ impl ProjectMember {
             DELETE FROM project_members
             WHERE id = $1
             ",
-            self.id.0
+            self.id
         )
         .execute(conn)
         .await?;
