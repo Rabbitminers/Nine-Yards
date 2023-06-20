@@ -50,7 +50,7 @@ async fn main() -> std::io::Result<()> {
             )
             .app_data(web::Data::new(pool.clone()))
             .wrap(actix_web::middleware::Logger::default())
-            .wrap(crate::middleware::auth::Authenticator)
+            // .wrap(crate::middleware::auth::Authenticator)
             .configure(config::app::config_services)
             .configure(routes::config)
     })
