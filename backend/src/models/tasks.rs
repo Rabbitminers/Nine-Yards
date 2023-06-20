@@ -1,4 +1,4 @@
-use actix_web::http::StatusCode;
+use chrono::NaiveDateTime;
 use sqlx::SqlitePool;
 
 use super::{
@@ -6,10 +6,9 @@ use super::{
         TaskId, 
         ProjectId, 
         TaskGroupId, 
-        UserId, 
-        generate_task_group_id
+        UserId, SubTaskId, ProjectMemberId, 
     }, 
-    users::User, error::ServiceError
+    users::User
 };
 
 pub struct TaskGroup {
@@ -28,22 +27,19 @@ pub struct TaskGroupBuilder {
 
 impl TaskGroupBuilder {
     pub async fn create(
-        &self,
+        self,
         conn: &SqlitePool
-    ) -> Result<TaskGroup, super::error::ServiceError> {
+    ) -> Result<TaskGroup, super::DatabaseError> {
         if let Ok(Some(_)) = TaskGroup::find_by_name(&self.name, conn).await {
-            return Err(ServiceError::new(
-                StatusCode::BAD_REQUEST,
-                format!("A task group with name '{}' already exists", &self.name)
-            ));
+            return Err(super::DatabaseError::AlreadyExists);
         }
 
-        let id = generate_task_group_id(&conn).await?;
+        let id = TaskGroupId::generate(&conn).await?;
 
         let group = TaskGroup {
             id,
-            project_id: self.project_id.clone(),
-            name: self.name.clone(),
+            project_id: self.project_id,
+            name: self.name,
             position: self.position
         };
 
@@ -94,8 +90,8 @@ impl TaskGroup {
                 $1, $2, $3, $4
             )
             ",
-            self.id.0,
-            self.project_id.0,
+            self.id,
+            self.project_id,
             self.name, 
             self.position
         )
@@ -114,7 +110,7 @@ impl TaskGroup {
             DELETE FROM tasks
             WHERE task_group_id = $1
             ",
-            self.id.0
+            self.id
         )
         .execute(conn)
         .await?;
@@ -124,7 +120,7 @@ impl TaskGroup {
             DELETE FROM task_groups
             WHERE id = $1
             ",
-            self.id.0
+            self.id
         )
         .execute(conn)
         .await?;
@@ -133,33 +129,58 @@ impl TaskGroup {
     }
 }
 
+#[derive(Serialize, Deserialize, Validate)]
 pub struct Task {
     pub id: TaskId,
     pub project_id: ProjectId,
     pub task_group_id: TaskGroupId,
+    #[validate(length(min = 3, max = 30))]
     pub name: String,
     pub information: String,
     pub creator: UserId,
-    pub assignee: UserId
+    pub due: Option<NaiveDateTime>,
+    pub primary_colour: String,
+    pub accent_colour: String,
 }
 
+#[derive(Serialize, Deserialize, Validate)]
 pub struct TaskBuilder {
     pub project_id: ProjectId,
     pub task_group_id: TaskGroupId,
+    #[validate(length(min = 3, max = 30))]
     pub name: String,
     pub information: String,
     pub creator: UserId,
+    pub primary_colour: String,
+    pub accent_colour: String,
+}
 
+impl TaskBuilder {
+    pub async fn create(
+        self,
+        conn: &SqlitePool
+    ) -> Result<Task, super::DatabaseError> {
+        let id = TaskId::generate(&conn).await?;
+
+        let task = Task {
+            id,
+            project_id: self.project_id,
+            task_group_id: self.task_group_id,
+            name: self.name,
+            information: self.information,
+            creator: self.creator,
+            due: None,
+            primary_colour: self.primary_colour,
+            accent_colour: self.accent_colour,
+        };
+
+        task.insert(conn).await?;
+
+        Ok(task)
+    }
 }
 
 impl Task {
-    pub async fn create(
-        data: &TaskBuilder,
-        conn: &SqlitePool,
-    ) ->  Result<String, String> {
-        unimplemented!()
-    }
-
     pub async fn insert(
         &self,
         conn: &SqlitePool
@@ -168,20 +189,206 @@ impl Task {
             "
             INSERT INTO tasks (
                 id, project_id, task_group_id, 
-                name, information, creator, 
-                assignee
+                name, information, creator, due, 
+                primary_colour, accent_colour
             )
             VALUES (
-                $1, $2, $3, $4, $5, $6, $7
+                $1, $2, $3, $4, $5, $6, $7, $8,
+                $9
             )
             ",
-            self.id.0,
-            self.project_id.0,
-            self.task_group_id.0,
+            self.id,
+            self.project_id,
+            self.task_group_id,
             self.name,
             self.information,
-            self.creator.0,
-            self.assignee.0
+            self.creator,
+            self.due,
+            self.primary_colour,
+            self.accent_colour
+        )
+        .execute(conn)
+        .await?;
+
+        Ok(())
+    }
+
+    pub async fn get(
+        id: TaskId,
+        conn: &SqlitePool
+    ) -> Result<Option<Self>, sqlx::error::Error> {
+        let query = sqlx::query!(
+            "
+            SELECT id, project_id, task_group_id, 
+                 name, information, creator, due, 
+                 primary_colour, accent_colour
+            FROM tasks
+            WHERE id = $1
+            ",
+            id
+        )
+        .fetch_optional(conn)
+        .await?;
+        
+        if let Some(row) = query {
+            Ok(Some(Self {
+                id: TaskId(row.id),
+                project_id: ProjectId(row.project_id),
+                task_group_id: TaskGroupId(row.task_group_id),
+                name: row.name,
+                information: row.information,
+                creator: UserId(row.creator),
+                due: row.due,
+                primary_colour: row.primary_colour,
+                accent_colour: row.accent_colour,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub async fn delete(
+        id: TaskId,
+        conn: &SqlitePool
+    ) -> Result<(), sqlx::error::Error> {
+        sqlx::query!(
+            "
+            DELETE FROM sub_tasks
+            WHERE task_id = $1
+            ",
+            id
+        )
+        .execute(conn)
+        .await?;
+
+        sqlx::query!(
+            "
+            DELETE FROM tasks
+            WHERE id = $1
+            ",
+            id
+        )
+        .execute(conn)
+        .await?;
+
+        Ok(())
+    }   
+}
+
+
+#[derive(Serialize, Deserialize)]
+pub struct SubTask {
+    pub id: SubTaskId,
+    pub task_id: TaskId,
+    pub assignee: Option<ProjectMemberId>,
+    pub body: String,
+    pub completed: bool
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct SubTaskBuilder {
+    pub task_id: TaskId,
+    pub body: String,
+}
+
+impl SubTaskBuilder {
+    pub async fn create(
+        self,
+        conn: &SqlitePool
+    ) -> Result<SubTask, super::DatabaseError> {
+        let id = SubTaskId::generate(&conn).await?;
+
+        let sub_task = SubTask {
+            id,
+            task_id: self.task_id,
+            assignee: None,
+            body: self.body,
+            completed: false
+        };
+
+        sub_task.insert(conn).await?;
+        
+        Ok(sub_task)
+    }
+}
+
+impl SubTask {
+    pub async fn insert(
+        &self,
+        conn: &SqlitePool
+    ) -> Result<(), sqlx::error::Error> {
+        sqlx::query!(
+            "
+            INSERT INTO sub_tasks (
+                id, task_id, assignee, 
+                body, completed
+            )
+            VALUES (
+                $1, $2, $3, $4, $5
+            )
+            ",
+            self.id,
+            self.task_id,
+            self.assignee,
+            self.body,
+            self.completed
+        )
+        .execute(conn)
+        .await?;
+
+        Ok(())
+    }
+
+    pub async fn assign(
+        user: Option<ProjectMemberId>,
+        id: SubTaskId,
+        conn: &SqlitePool
+    ) -> Result<(), sqlx::error::Error> {
+        sqlx::query!(
+            "
+            UPDATE sub_tasks
+            SET assignee = $1
+            WHERE id = $2
+            ",
+            user,
+            id
+        )
+        .execute(conn)
+        .await?;
+
+        Ok(())
+    }
+
+    pub async fn set_status(
+        id: SubTaskId,
+        completed: bool,
+        conn: &SqlitePool
+    ) -> Result<(), sqlx::error::Error> {
+        sqlx::query!(
+            "
+            UPDATE sub_tasks
+            SET completed = $1
+            WHERE id = $2
+            ",
+            completed,
+            id
+        )
+        .execute(conn)
+        .await?;
+
+        Ok(())
+    }
+
+    pub async fn remove(
+        id: SubTaskId,
+        conn: &SqlitePool
+    ) -> Result<(), sqlx::error::Error> {
+        sqlx::query!(
+            "
+            DELETE FROM sub_tasks
+            WHERE id = $1
+            ",
+            id
         )
         .execute(conn)
         .await?;

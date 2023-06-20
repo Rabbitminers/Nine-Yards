@@ -3,9 +3,9 @@ use bcrypt::{DEFAULT_COST, hash, verify};
 use sqlx::SqlitePool;
 use uuid::Uuid;
 use validator::Validate;
-use crate::{models::{ids::generate_user_id, login_history::LoginHistory}, service_error};
+use crate::{models::login_history::LoginHistory, utilities::auth_utils::AuthenticationError, database::DatabaseError, routes::ApiError};
 
-use super::{ids::UserId, user_token::UserToken, error::ServiceError};
+use super::{ids::{UserId, ProjectId}, user_token::UserToken};
 
 pub const DELETED_USER: &str ="7102222d-b551-46e6-b1cf-44a67a05aace";
 
@@ -46,18 +46,15 @@ impl User {
     pub async fn register(
         data: Register, 
         conn: &SqlitePool
-    ) -> Result<User, ServiceError> {        
+    ) -> Result<User, super::DatabaseError> {        
         // Check if the username is already used
         if let Ok(Some(_)) = Self::find_by_username(&data.username, conn).await {
-            return Err(service_error!(
-                StatusCode::BAD_REQUEST, 
-                "User '{}' is already registered", &data.username
-            ));
+            return Err(super::DatabaseError::AlreadyExists);
         }
 
         // Generate password hash and new user id
         let hashed_pwd = hash(&data.password, DEFAULT_COST).unwrap();
-        let user_id = generate_user_id(conn).await?;
+        let user_id = UserId::generate(conn).await?;
         
         let user: User = User {
             id: user_id,
@@ -83,7 +80,7 @@ impl User {
             where id = $2
             ",
             "",
-            self.id.0
+            self.id
         )
         .execute(conn)
         .await?;
@@ -115,8 +112,8 @@ impl User {
                     $1, $2, $3
                 )
                 ",
-                history.id.0,
-                history.user_id.0,
+                history.id,
+                history.user_id,
                 history.login_timestamp
             )
             .execute(conn)
@@ -134,7 +131,7 @@ impl User {
             WHERE id = $2
             ",
             session,
-            user.id.0,
+            user.id
         )
         .execute(conn)
         .await?;
@@ -160,7 +157,7 @@ impl User {
                 $1, $2, $3, $4, $5
             )
             ",
-            self.id.0,
+            self.id,
             self.username,
             self.password,
             self.email,
@@ -185,7 +182,7 @@ impl User {
             WHERE user_id = $2
             ",
             deleted_user.0,
-            self.id.0
+            self.id
         )
         .execute(conn)
         .await?;
@@ -195,7 +192,7 @@ impl User {
             DELETE FROM notifications
             WHERE recipient = $1
             ",
-            self.id.0
+            self.id
         )
         .execute(conn)
         .await?;
@@ -205,19 +202,19 @@ impl User {
             DELETE FROM tasks
             WHERE creator = $1
             ",
-            self.id.0
+            self.id
         )
         .execute(conn)
         .await?;
 
         sqlx::query!(
             "
-            UPDATE tasks
+            UPDATE sub_tasks
             SET assignee = $1
             WHERE assignee = $2
             ",
             deleted_user.0,
-            self.id.0
+            self.id
         )
         .execute(conn)
         .await?;
@@ -227,12 +224,36 @@ impl User {
             DELETE FROM users
             WHERE id = $1
             ",
-            self.id.0
+            self.id
         )
         .execute(conn)
         .await?;
 
         Ok(())
+    }
+
+    pub async fn is_member_of(
+        &self,
+        project: ProjectId,
+        conn: &SqlitePool
+    ) -> Result<bool, ApiError>{
+        let query = sqlx::query!(
+            "
+            SELECT EXISTS(
+                SELECT 1
+                FROM project_members
+                WHERE user_id = $1
+                AND project_id = $2
+            )
+            AS member_exists
+            ",
+            self.id,
+            project.0
+        )
+        .fetch_one(conn)
+        .await?;
+    
+        Ok(query.member_exists.is_positive())
     }
 
     pub async fn find_by_login_session(
@@ -304,7 +325,7 @@ impl User {
             FROM users
             WHERE id = $1
             ",
-            user_id.0
+            user_id
         )
         .fetch_optional(conn)
         .await?;
@@ -326,11 +347,14 @@ impl User {
     pub async fn from_request(
         req: HttpRequest,
         conn: &SqlitePool
-    ) -> Result<Option<Self>, sqlx::error::Error> {
+    ) -> Result<Self, AuthenticationError> {
         if let Some(user_id) = req.extensions().get::<UserId>() {
-            return Ok(Self::find_by_id(user_id.clone(), conn).await?);
-        }
-        Ok(None)
+            if let Some(user) = Self::find_by_id(user_id.clone(), conn).await? {
+                return Ok(user);
+            }
+        } 
+
+        Err(AuthenticationError::InvalidToken)
     }
 
     pub fn generate_login_session() -> String {
