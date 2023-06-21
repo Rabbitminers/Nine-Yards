@@ -84,6 +84,7 @@ cargo build --release --features=postgres
 There are many great options for hosting Nine Yards both cloud and localy. If you are looking for something free, Oracle Web Infrastructure's free trial is permanent and more than powerful enough' a full specification list can be found [here](https://www.oracle.com/cloud/free/). 
 
 As well as this, they offer splitting your resources between multiple instances, which can be useful if you are intending on running Nine Yards split, allowing you to take advantage of server side rendering, to improve site performance and allowing for the front end and backend to be scaled seperately with minimal difficulty if needed. 
+
 ---
 
 ## Tech Stack
