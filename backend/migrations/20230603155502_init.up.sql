@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     project_id TEXT REFERENCES projects NOT NULL,
     task_group_id TEXT REFERENCES task_groups NOT NULL,
     name TEXT NOT NULL,
-    information TEXT NOT NULL,
+    information TEXT,
     creator TEXT REFERENCES users NOT NULL,
     due DATETIME,
     primary_colour TEXT NOT NULL,

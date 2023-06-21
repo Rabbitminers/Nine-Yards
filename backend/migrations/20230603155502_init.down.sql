@@ -13,6 +13,6 @@ DROP TABLE IF EXISTS tasks;
 
 DROP TABLE IF EXISTS lables;
 
-DROP TABLE IF EXISTS sub_tasks
+DROP TABLE IF EXISTS sub_tasks;
 
 DROP TABLE IF EXISTS notifications;
