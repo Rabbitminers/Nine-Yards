@@ -7,8 +7,9 @@ use actix_web::{
 };
 use futures::FutureExt;
 use futures::future::{ready, LocalBoxFuture, Ready};
-use sqlx::SqlitePool;
 
+use crate::database::{SqlPool, DatabaseError};
+use crate::routes::ApiError;
 use crate::utilities::token_utils;
 
 pub struct Authenticator;
@@ -58,7 +59,7 @@ where
             })
             .unwrap_or_else(String::new);
 
-        let pool = req.app_data::<Data<SqlitePool>>()
+        let pool = req.app_data::<Data<SqlPool>>()
             .unwrap()
             .clone();
 

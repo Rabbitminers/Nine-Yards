@@ -20,6 +20,9 @@ pub enum ApiError {
     #[error("Database error: {0}")]
     SqlxDatabase(#[from] sqlx::Error),
 
+    #[error("Internal server error: {0}")]
+    InternalServerError(String),
+
     #[error("Json model error: {0}")]
     Json(#[from] serde_json::Error),
 
@@ -53,6 +56,8 @@ impl actix_web::error::ResponseError for ApiError {
             actix_web::http::StatusCode::NOT_FOUND,
             ApiError::Unauthorized(..) =>
             actix_web::http::StatusCode::UNAUTHORIZED,
+            ApiError::InternalServerError(..) =>
+            actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 

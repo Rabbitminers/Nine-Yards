@@ -1,5 +1,6 @@
 use chrono::{NaiveDateTime, Utc};
-use sqlx::SqlitePool;
+
+use crate::database::Database;
 
 use super::{ids::{
     UserId, 
@@ -15,10 +16,10 @@ pub struct LoginHistory {
 impl LoginHistory {
     pub async fn create(
         username: &String,
-        conn: &SqlitePool
+        transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Option<LoginHistory> {
-        if let Ok(Some(user)) = User::find_by_username(username, conn).await {
-            let history_id = LoginHistoryId::generate(conn).await.ok()?;
+        if let Ok(Some(user)) = User::find_by_username(username, &mut *transaction).await {
+            let history_id = LoginHistoryId::generate(&mut *transaction).await.ok()?;
             let now = Utc::now();
 
             Some(LoginHistory {
@@ -33,7 +34,7 @@ impl LoginHistory {
 
     pub async fn save_login_history(
         &self,
-        conn: &SqlitePool
+        transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<(), sqlx::error::Error> {
         sqlx::query!(
             "
@@ -48,7 +49,7 @@ impl LoginHistory {
             self.user_id,
             self.login_timestamp
         )
-        .execute(conn)
+        .execute(&mut *transaction)
         .await?;
 
         Ok(())

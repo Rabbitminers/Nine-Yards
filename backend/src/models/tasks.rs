@@ -1,6 +1,8 @@
 use chrono::NaiveDateTime;
 use sqlx::SqlitePool;
 
+use crate::database::Database;
+
 use super::{
     ids::{
         TaskId, 
@@ -28,13 +30,13 @@ pub struct TaskGroupBuilder {
 impl TaskGroupBuilder {
     pub async fn create(
         self,
-        conn: &SqlitePool
+        transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<TaskGroup, super::DatabaseError> {
-        if let Ok(Some(_)) = TaskGroup::find_by_name(&self.name, conn).await {
+        if let Ok(Some(_)) = TaskGroup::find_by_name(&self.name, &mut *transaction).await {
             return Err(super::DatabaseError::AlreadyExists);
         }
 
-        let id = TaskGroupId::generate(&conn).await?;
+        let id = TaskGroupId::generate(&mut *transaction).await?;
 
         let group = TaskGroup {
             id,
@@ -43,7 +45,7 @@ impl TaskGroupBuilder {
             position: self.position
         };
 
-        group.insert(conn).await?;
+        group.insert(&mut *transaction).await?;
         
         Ok(group)
     }
@@ -52,7 +54,7 @@ impl TaskGroupBuilder {
 impl TaskGroup {
     pub async fn find_by_name(
         name: &String,
-        conn: &SqlitePool
+        transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<Option<Self>, sqlx::error::Error> {
         let result = sqlx::query!(
             "
@@ -62,7 +64,7 @@ impl TaskGroup {
             ",
             name
         )
-        .fetch_optional(conn)
+        .fetch_optional(&mut *transaction)
         .await?;
         
         if let Some(row) = result {
@@ -79,7 +81,7 @@ impl TaskGroup {
 
     pub async fn insert(
         &self,
-        conn: &SqlitePool
+        transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<(), sqlx::error::Error> {
         sqlx::query!(
             "
@@ -95,7 +97,7 @@ impl TaskGroup {
             self.name, 
             self.position
         )
-        .execute(conn)
+        .execute(&mut *transaction)
         .await?;
 
         Ok(())
@@ -103,7 +105,7 @@ impl TaskGroup {
 
     pub async fn remove(
         &self,
-        conn: &SqlitePool
+        transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<(), sqlx::error::Error> {
         sqlx::query!(
             "
@@ -112,7 +114,7 @@ impl TaskGroup {
             ",
             self.id
         )
-        .execute(conn)
+        .execute(&mut *transaction)
         .await?;
 
         sqlx::query!(
@@ -122,7 +124,7 @@ impl TaskGroup {
             ",
             self.id
         )
-        .execute(conn)
+        .execute(&mut *transaction)
         .await?;
 
         Ok(())
@@ -136,7 +138,7 @@ pub struct Task {
     pub task_group_id: TaskGroupId,
     #[validate(length(min = 3, max = 30))]
     pub name: String,
-    pub information: String,
+    pub information: Option<String>,
     pub creator: UserId,
     pub due: Option<NaiveDateTime>,
     pub primary_colour: String,
@@ -149,7 +151,6 @@ pub struct TaskBuilder {
     pub task_group_id: TaskGroupId,
     #[validate(length(min = 3, max = 30))]
     pub name: String,
-    pub information: String,
     pub creator: UserId,
     pub primary_colour: String,
     pub accent_colour: String,
@@ -158,23 +159,23 @@ pub struct TaskBuilder {
 impl TaskBuilder {
     pub async fn create(
         self,
-        conn: &SqlitePool
+        transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<Task, super::DatabaseError> {
-        let id = TaskId::generate(&conn).await?;
+        let id = TaskId::generate(&mut *transaction).await?;
 
         let task = Task {
             id,
             project_id: self.project_id,
             task_group_id: self.task_group_id,
             name: self.name,
-            information: self.information,
+            information: None,
             creator: self.creator,
             due: None,
             primary_colour: self.primary_colour,
             accent_colour: self.accent_colour,
         };
 
-        task.insert(conn).await?;
+        task.insert(&mut *transaction).await?;
 
         Ok(task)
     }
@@ -183,7 +184,7 @@ impl TaskBuilder {
 impl Task {
     pub async fn insert(
         &self,
-        conn: &SqlitePool
+        transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<(), sqlx::error::Error> {
         sqlx::query!(
             "
@@ -207,7 +208,7 @@ impl Task {
             self.primary_colour,
             self.accent_colour
         )
-        .execute(conn)
+        .execute(&mut *transaction)
         .await?;
 
         Ok(())
@@ -215,7 +216,7 @@ impl Task {
 
     pub async fn get(
         id: TaskId,
-        conn: &SqlitePool
+        transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<Option<Self>, sqlx::error::Error> {
         let query = sqlx::query!(
             "
@@ -227,7 +228,7 @@ impl Task {
             ",
             id
         )
-        .fetch_optional(conn)
+        .fetch_optional(&mut *transaction)
         .await?;
         
         if let Some(row) = query {
@@ -249,7 +250,7 @@ impl Task {
 
     pub async fn delete(
         id: TaskId,
-        conn: &SqlitePool
+        transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<(), sqlx::error::Error> {
         sqlx::query!(
             "
@@ -258,7 +259,7 @@ impl Task {
             ",
             id
         )
-        .execute(conn)
+        .execute(&mut *transaction)
         .await?;
 
         sqlx::query!(
@@ -268,7 +269,7 @@ impl Task {
             ",
             id
         )
-        .execute(conn)
+        .execute(&mut *transaction)
         .await?;
 
         Ok(())
@@ -294,9 +295,9 @@ pub struct SubTaskBuilder {
 impl SubTaskBuilder {
     pub async fn create(
         self,
-        conn: &SqlitePool
+        transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<SubTask, super::DatabaseError> {
-        let id = SubTaskId::generate(&conn).await?;
+        let id = SubTaskId::generate(&mut *transaction).await?;
 
         let sub_task = SubTask {
             id,
@@ -306,7 +307,7 @@ impl SubTaskBuilder {
             completed: false
         };
 
-        sub_task.insert(conn).await?;
+        sub_task.insert(&mut *transaction).await?;
         
         Ok(sub_task)
     }
@@ -315,7 +316,7 @@ impl SubTaskBuilder {
 impl SubTask {
     pub async fn insert(
         &self,
-        conn: &SqlitePool
+        transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<(), sqlx::error::Error> {
         sqlx::query!(
             "
@@ -333,16 +334,45 @@ impl SubTask {
             self.body,
             self.completed
         )
-        .execute(conn)
+        .execute(&mut *transaction)
         .await?;
 
         Ok(())
     }
 
+    pub async fn get(
+        id: SubTaskId,
+        transaction: &mut sqlx::Transaction<'_, Database>,
+    ) -> Result<Option<Self>, sqlx::error::Error> {
+        let query = sqlx::query!(
+            "
+            SELECT id, task_id, assignee,
+            body, completed
+            FROM sub_tasks
+            WHERE id = $1
+            ",
+            id
+        )
+        .fetch_optional(&mut *transaction)
+        .await?;
+
+        if let Some(row) = query {
+            Ok(Some(Self {
+                id: SubTaskId(row.id),
+                task_id: TaskId(row.task_id),
+                assignee: row.assignee.map(ProjectMemberId),
+                body: row.body,
+                completed: row.completed
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
     pub async fn assign(
         user: Option<ProjectMemberId>,
         id: SubTaskId,
-        conn: &SqlitePool
+        transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<(), sqlx::error::Error> {
         sqlx::query!(
             "
@@ -353,7 +383,7 @@ impl SubTask {
             user,
             id
         )
-        .execute(conn)
+        .execute(&mut *transaction)
         .await?;
 
         Ok(())
@@ -362,7 +392,7 @@ impl SubTask {
     pub async fn set_status(
         id: SubTaskId,
         completed: bool,
-        conn: &SqlitePool
+        transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<(), sqlx::error::Error> {
         sqlx::query!(
             "
@@ -373,7 +403,7 @@ impl SubTask {
             completed,
             id
         )
-        .execute(conn)
+        .execute(&mut *transaction)
         .await?;
 
         Ok(())
@@ -381,7 +411,7 @@ impl SubTask {
 
     pub async fn remove(
         id: SubTaskId,
-        conn: &SqlitePool
+        transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<(), sqlx::error::Error> {
         sqlx::query!(
             "
@@ -390,7 +420,7 @@ impl SubTask {
             ",
             id
         )
-        .execute(conn)
+        .execute(&mut *transaction)
         .await?;
 
         Ok(())

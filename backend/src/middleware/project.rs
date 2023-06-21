@@ -8,8 +8,8 @@ use actix_web::{
 };
 use futures::FutureExt;
 use futures::future::{ready, LocalBoxFuture, Ready};
-use sqlx::SqlitePool;
 
+use crate::database::SqlPool;
 use crate::models::ids::ProjectId;
 use crate::models::users::User;
 use crate::routes::ApiError;
@@ -63,7 +63,7 @@ where
             })
             .unwrap_or_else(String::new);
 
-        let pool = req.app_data::<Data<SqlitePool>>()
+        let pool = req.app_data::<Data<SqlPool>>()
             .unwrap()
             .clone();
         
@@ -90,7 +90,7 @@ where
 
 pub async fn is_project_public(
     project_id: ProjectId,
-    conn: &SqlitePool
+    conn: &SqlPool,
 ) -> Result<bool, ApiError> {
     let query = sqlx::query!(
         "
@@ -108,7 +108,7 @@ pub async fn is_project_public(
 
 pub async fn get_authenticated_user(
     token: String, 
-    pool: &SqlitePool
+    pool: &SqlPool,
 ) -> Result<User, ApiError> {
     if let Some(user) = token_utils::is_valid_token(token, &pool).await {
         Ok(user)

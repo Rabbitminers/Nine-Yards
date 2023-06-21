@@ -1,20 +1,12 @@
-use sqlx::{
-    sqlite::SqlitePoolOptions, 
-    SqlitePool
-};
-use std::{
-    time::Duration,
-    env
-};
+use std::{env, time::Duration};
 use log::info;
 
-
-pub async fn connect() -> Result<SqlitePool, sqlx::Error> {
-    info!("Initializing database connection");
+pub async fn connect() -> Result<super::SqlPool, sqlx::Error> {
+    info!("Initializing database &mut *transactionection");
     let database_url = env::var("DATABASE_URL")
             .expect("DATABASE_URL not found.");
 
-    let pool = SqlitePoolOptions::new()
+    let pool = super::PoolOptions::new()
         .min_connections(
             env::var("DATABASE_MIN_CONNECTIONS")
                 .ok()

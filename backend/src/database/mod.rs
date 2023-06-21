@@ -13,3 +13,17 @@ pub enum DatabaseError {
     #[error("Error while parsing JSON: {0}")]
     Json(#[from] serde_json::Error),
 }
+
+#[cfg(any(feature = "sqlite"))]
+pub type SqlPool = sqlx::SqlitePool;
+#[cfg(any(feature = "sqlite"))]
+pub type PoolOptions = sqlx::sqlite::SqlitePoolOptions;
+#[cfg(any(feature = "sqlite"))]
+pub type Database = sqlx::Sqlite;
+
+#[cfg(any(feature = "postgres"))]
+pub type SqlPool = sqlx::PgPool;
+#[cfg(any(feature = "postgres"))]
+pub type PoolOptions = sqlx::postgres::PgPoolOptions;
+#[cfg(any(feature = "postgres"))]
+pub type Database = sqlx::Postgres;

@@ -34,7 +34,7 @@ async fn main() -> std::io::Result<()> {
 
     let pool = sqlite::connect()
         .await
-        .expect("Database connection failed");
+        .expect("Database &mut *transactionection failed");
 
     HttpServer::new(move || {
         App::new()

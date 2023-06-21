@@ -8,7 +8,7 @@ macro_rules! id_type {
     ($vis:vis, $struct:ty, $id_length:expr, $select_stmnt:literal) => {
         impl $struct {
             $vis async fn generate(
-                conn: &sqlx::SqlitePool,
+                transaction: &mut sqlx::Transaction<'_, crate::database::Database>,
             ) -> Result<$struct, super::DatabaseError> {
                 let mut retry_count = 0;
                 let length = $id_length;
@@ -20,7 +20,7 @@ macro_rules! id_type {
                     id = crate::models::ids::generate_base62_id(length);
 
                     let results = sqlx::query!($select_stmnt, id)
-                        .fetch_one(conn)
+                        .fetch_one(&mut *transaction)
                         .await?;
 
                     let count = results.count;

@@ -1,8 +1,6 @@
-use chrono::{NaiveDateTime, Utc};
-use sqlx::SqlitePool;
 use sqlx;
 
-use crate::database::DatabaseError;
+use crate::database::{DatabaseError, Database};
 use super::ids::{NotifcationId, UserId, ProjectId, TaskId};
 
 #[derive(Serialize, Deserialize)]
@@ -52,18 +50,18 @@ impl NotificationBuilder {
     pub async fn create(
         &self,
         recipient: UserId,
-        conn: &SqlitePool
+        transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<(), super::DatabaseError> {
-        self.create_many(vec![recipient], conn).await
+        self.create_many(vec![recipient], &mut *transaction).await
     }
 
     pub async fn create_many(
         &self,
         recipients: Vec<UserId>,
-        conn: &SqlitePool
+        transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<(), super::DatabaseError> {
         for recipient in recipients {
-            let id = NotifcationId::generate(conn).await?;
+            let id = NotifcationId::generate(&mut *transaction).await?;
 
             Notification {
                 id,
@@ -71,7 +69,7 @@ impl NotificationBuilder {
                 body: self.body.clone(),
                 notification_type: self.notification_type.clone()
             }
-            .insert(conn)
+            .insert(&mut *transaction)
             .await?;
         }
 
@@ -82,7 +80,7 @@ impl NotificationBuilder {
 impl Notification {
     pub async fn insert(
         &self,
-        conn: &SqlitePool
+        transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<(), super::DatabaseError> {
         let notification_type = serde_json::to_string(&self.notification_type)?;
 
@@ -100,7 +98,7 @@ impl Notification {
             self.body,
             notification_type
         )
-        .execute(conn)
+        .execute(&mut *transaction)
         .await?;
 
         Ok(())
@@ -108,7 +106,7 @@ impl Notification {
 
     pub async fn get(
         notification_id: NotifcationId,
-        conn: &SqlitePool
+        transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<Option<Self>, DatabaseError> {
         let query = sqlx::query!(
             "
@@ -119,7 +117,7 @@ impl Notification {
             ",
             notification_id
         )
-        .fetch_optional(conn)
+        .fetch_optional(&mut *transaction)
         .await?;
         
         if let Some(row) = query {

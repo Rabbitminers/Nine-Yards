@@ -1,13 +1,13 @@
-use actix_web::{HttpRequest, HttpMessage, http::StatusCode};
+use actix_web::{HttpRequest, HttpMessage};
 use bcrypt::{DEFAULT_COST, hash, verify};
 use sqlx::SqlitePool;
 use uuid::Uuid;
 use validator::Validate;
-use crate::{models::login_history::LoginHistory, utilities::auth_utils::AuthenticationError, database::DatabaseError, routes::ApiError};
+use crate::{models::login_history::LoginHistory, utilities::auth_utils::AuthenticationError, routes::ApiError, database::{Database, SqlPool}};
 
 use super::{ids::{UserId, ProjectId}, user_token::UserToken};
 
-pub const DELETED_USER: &str ="7102222d-b551-46e6-b1cf-44a67a05aace";
+pub const DELETED_USER: &str ="03082007";
 
 #[derive(Serialize, Deserialize)]
 pub struct User {
@@ -45,16 +45,16 @@ pub struct LoginSession {
 impl User {
     pub async fn register(
         data: Register, 
-        conn: &SqlitePool
+        transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<User, super::DatabaseError> {        
         // Check if the username is already used
-        if let Ok(Some(_)) = Self::find_by_username(&data.username, conn).await {
+        if let Ok(Some(_)) = Self::find_by_username(&data.username, &mut *transaction).await {
             return Err(super::DatabaseError::AlreadyExists);
         }
 
         // Generate password hash and new user id
         let hashed_pwd = hash(&data.password, DEFAULT_COST).unwrap();
-        let user_id = UserId::generate(conn).await?;
+        let user_id = UserId::generate(&mut *transaction).await?;
         
         let user: User = User {
             id: user_id,
@@ -64,14 +64,14 @@ impl User {
             login_session: None,
         };
 
-        user.insert(conn).await?;
+        user.insert(&mut *transaction).await?;
         
         Ok(user)
     }
 
     pub async fn logout(
         &self,
-        conn: &SqlitePool
+        transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<(), sqlx::error::Error> {
         sqlx::query!(
             "
@@ -82,7 +82,7 @@ impl User {
             "",
             self.id
         )
-        .execute(conn)
+        .execute(&mut *transaction)
         .await?;
 
         Ok(())
@@ -90,9 +90,9 @@ impl User {
 
     pub async fn login(
         login: Login, 
-        conn: &SqlitePool
+        transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<Option<LoginSession>, sqlx::error::Error> {
-        let user = match login.get_user(conn).await? {
+        let user = match login.get_user(&mut *transaction).await? {
             Some(user) => user,
             None => return Ok(None)
         };
@@ -102,7 +102,7 @@ impl User {
             return Ok(None);
         }   
 
-        if let Some(history) = LoginHistory::create(&user.username, conn).await { 
+        if let Some(history) = LoginHistory::create(&user.username, &mut *transaction).await { 
             sqlx::query!(
                 "
                 INSERT INTO login_history (
@@ -116,7 +116,7 @@ impl User {
                 history.user_id,
                 history.login_timestamp
             )
-            .execute(conn)
+            .execute(&mut *transaction)
             .await?;
         } else {
             return Ok(None)
@@ -133,7 +133,7 @@ impl User {
             session,
             user.id
         )
-        .execute(conn)
+        .execute(&mut *transaction)
         .await?;
         
 
@@ -145,7 +145,7 @@ impl User {
 
     pub async fn insert(
         &self,
-        conn: &SqlitePool
+        transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<(), sqlx::error::Error> {
         sqlx::query!(
             "
@@ -163,7 +163,7 @@ impl User {
             self.email,
             self.login_session
         )
-        .execute(conn)
+        .execute(&mut *transaction)
         .await?;
 
         Ok(())
@@ -171,7 +171,7 @@ impl User {
 
     pub async fn remove(
         &self,
-        conn: &SqlitePool
+        transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<(), sqlx::error::Error> {
         let deleted_user: UserId = UserId(DELETED_USER.into());
 
@@ -184,7 +184,7 @@ impl User {
             deleted_user.0,
             self.id
         )
-        .execute(conn)
+        .execute(&mut *transaction)
         .await?;
 
         sqlx::query!(
@@ -194,7 +194,7 @@ impl User {
             ",
             self.id
         )
-        .execute(conn)
+        .execute(&mut *transaction)
         .await?;
 
         sqlx::query!(
@@ -204,7 +204,7 @@ impl User {
             ",
             self.id
         )
-        .execute(conn)
+        .execute(&mut *transaction)
         .await?;
 
         sqlx::query!(
@@ -216,7 +216,7 @@ impl User {
             deleted_user.0,
             self.id
         )
-        .execute(conn)
+        .execute(&mut *transaction)
         .await?;
 
         sqlx::query!(
@@ -226,7 +226,7 @@ impl User {
             ",
             self.id
         )
-        .execute(conn)
+        .execute(&mut *transaction)
         .await?;
 
         Ok(())
@@ -235,7 +235,7 @@ impl User {
     pub async fn is_member_of(
         &self,
         project: ProjectId,
-        conn: &SqlitePool
+        conn: &SqlPool,
     ) -> Result<bool, ApiError>{
         let query = sqlx::query!(
             "
@@ -258,7 +258,7 @@ impl User {
 
     pub async fn find_by_login_session(
         token: &UserToken,
-        conn: &SqlitePool
+        transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<Option<Self>, sqlx::error::Error> {
         let result = sqlx::query!(
             "
@@ -269,7 +269,7 @@ impl User {
             ",
             token.login_session
         )
-        .fetch_optional(conn)
+        .fetch_optional(&mut *transaction)
         .await?;
 
         if let Some(row) = result {
@@ -287,7 +287,7 @@ impl User {
     
     pub async fn find_by_username(
         username: &String, 
-        conn: &SqlitePool
+        transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<Option<Self>, sqlx::error::Error> {
         let result = sqlx::query!(
             "
@@ -298,7 +298,7 @@ impl User {
             ",
             username
         )
-        .fetch_optional(conn)
+        .fetch_optional(&mut *transaction)
         .await?;
 
         if let Some(row) = result {
@@ -316,7 +316,7 @@ impl User {
 
     pub async fn find_by_id(
         user_id: UserId,
-        conn: &SqlitePool
+        transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<Option<Self>, sqlx::error::Error> {
         let result = sqlx::query!(
             "
@@ -327,7 +327,7 @@ impl User {
             ",
             user_id
         )
-        .fetch_optional(conn)
+        .fetch_optional(&mut *transaction)
         .await?;
 
         if let Some(row) = result {
@@ -346,10 +346,10 @@ impl User {
 
     pub async fn from_request(
         req: HttpRequest,
-        conn: &SqlitePool
+        transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<Self, AuthenticationError> {
         if let Some(user_id) = req.extensions().get::<UserId>() {
-            if let Some(user) = Self::find_by_id(user_id.clone(), conn).await? {
+            if let Some(user) = Self::find_by_id(user_id.clone(), &mut *transaction).await? {
                 return Ok(user);
             }
         } 
@@ -365,7 +365,7 @@ impl User {
 impl Login {
     pub async fn get_user(
         &self,
-        conn: &SqlitePool
+        transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<Option<User>, sqlx::error::Error> {
         let results = sqlx::query!(
             "
@@ -378,7 +378,7 @@ impl Login {
             self.username_or_email,
             self.password
         )
-        .fetch_optional(conn)
+        .fetch_optional(&mut *transaction)
         .await?;
 
         if let Some(row) = results {
@@ -396,9 +396,9 @@ impl Login {
 
     pub async fn is_valid_user(
         &self,
-        conn: &SqlitePool
+        transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> bool {
-        let result = self.get_user(conn).await;
+        let result = self.get_user(&mut *transaction).await;
 
         if let Ok(Some(_)) = result {
             true

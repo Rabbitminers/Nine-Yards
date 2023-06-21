@@ -1,11 +1,13 @@
-use crate::models::{
+use crate::{models::{
     user_token::{
         UserToken, 
         KEY
     }, users::User
-};
+}, routes::ApiError};
 use jsonwebtoken::{DecodingKey, TokenData, Validation};
 use sqlx::SqlitePool;
+
+use super::auth_utils::AuthenticationError;
 
 pub fn decode_token(
     token: String
@@ -20,11 +22,14 @@ pub fn decode_token(
 pub async fn verify_token(
     token_data: &TokenData<UserToken>,
     pool: &SqlitePool,
-) -> Result<User, String> {
-    if let Ok(Some(user)) = User::find_by_login_session(&token_data.claims, &pool).await {
+) -> Result<User, ApiError> {
+    let mut transaction = pool.begin().await?;
+    if let Ok(Some(user)) = User::find_by_login_session(&token_data.claims, &mut transaction).await {
+        transaction.commit().await?;
         Ok(user)
     } else {
-        Err("Invalid token".to_string())
+        transaction.rollback().await?;
+        Err(AuthenticationError::InvalidToken.into())
     }
 }
 

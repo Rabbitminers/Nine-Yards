@@ -1,3 +1,5 @@
+use crate::database::Database;
+
 use super::ids::{ProjectId, TaskGroupId, TaskId, UserId, ProjectMemberId};
 use super::tasks::{TaskGroup, Task};
 use actix_web::HttpRequest;
@@ -26,9 +28,9 @@ impl ProjectBuilder {
     pub async fn create(
         &self,
         creator: UserId,
-        conn: &SqlitePool
+        transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<ProjectId, super::DatabaseError> {
-        let id = ProjectId::generate(conn).await?;
+        let id = ProjectId::generate(&mut *transaction).await?;
 
         let project = Project {
             id,
@@ -38,9 +40,9 @@ impl ProjectBuilder {
             public: self.public
         };
 
-        project.insert(conn).await?;
+        project.insert(&mut *transaction).await?;
 
-        let id = ProjectMemberId::generate(conn).await?;
+        let id = ProjectMemberId::generate(&mut *transaction).await?;
 
         let project_member = ProjectMember {
             id,
@@ -50,7 +52,7 @@ impl ProjectBuilder {
             accepted: true
         };
 
-        project_member.insert(conn).await?;
+        project_member.insert(&mut *transaction).await?;
 
         Ok(project.id)
     }
@@ -59,7 +61,7 @@ impl ProjectBuilder {
 impl Project {
     async fn insert(
         &self,
-        conn: &SqlitePool
+        transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<(), sqlx::error::Error> {   
         sqlx::query!(
             "
@@ -75,7 +77,7 @@ impl Project {
             self.owner,
             self.icon_url
         )
-        .execute(conn)
+        .execute(&mut *transaction)
         .await?;
 
         Ok(())
@@ -83,7 +85,7 @@ impl Project {
 
     pub async fn get(
         id: ProjectId,
-        conn: &SqlitePool
+        transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<Option<Self>, sqlx::error::Error> {
         let query = sqlx::query!(
             "
@@ -94,7 +96,7 @@ impl Project {
             ",
             id
         )
-        .fetch_optional(conn)
+        .fetch_optional(&mut *transaction)
         .await?;
 
         if let Some(row) = query {
@@ -112,14 +114,14 @@ impl Project {
 
     pub async fn from_user(
         id: UserId,
-        conn: &SqlitePool
+        transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<Vec<Self>, sqlx::error::Error> {
-        let memberships = ProjectMember::from_user(id, conn).await?;
+        let memberships = ProjectMember::from_user(id, &mut *transaction).await?;
 
         let mut projects: Vec<Self> = vec![];
 
         for member in memberships {
-            if let Some(project) = Self::get(member.project_id, conn).await? {
+            if let Some(project) = Self::get(member.project_id, &mut *transaction).await? {
                 projects.push(project)
             }
         }
@@ -129,12 +131,12 @@ impl Project {
 
     pub async fn remove(
         &self,
-        conn: &SqlitePool
+        transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<(), sqlx::error::Error> {
-        let task_groups = self.get_task_groups(conn).await?;
+        let task_groups = self.get_task_groups(&mut *transaction).await?;
         
         for group in task_groups {
-            group.remove(conn).await?;
+            group.remove(&mut *transaction).await?;
         }
 
         sqlx::query!(
@@ -144,7 +146,7 @@ impl Project {
             ",
             self.id
         )
-        .execute(conn)
+        .execute(&mut *transaction)
         .await?;
 
         sqlx::query!(
@@ -154,7 +156,7 @@ impl Project {
             ",
             self.id
         )
-        .execute(conn)
+        .execute(&mut *transaction)
         .await?;
 
         Ok(())
@@ -162,7 +164,7 @@ impl Project {
 
     pub async fn get_members(
         &self, 
-        conn: &SqlitePool
+        transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<Vec<ProjectMember>, sqlx::Error> {
         let users =sqlx::query!(
             "
@@ -173,7 +175,7 @@ impl Project {
             ",
             self.id
         )
-        .fetch_many(conn)
+        .fetch_many(&mut *transaction)
         .try_filter_map(|e| async {
             Ok(e.right().map(|m| ProjectMember {
                 id: ProjectMemberId(m.id),
@@ -191,7 +193,7 @@ impl Project {
 
     pub async fn get_task_groups(
         &self,
-        conn: &SqlitePool
+        transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<Vec<TaskGroup>, sqlx::error::Error> {
         let task_groups = sqlx::query!(
             "
@@ -201,7 +203,7 @@ impl Project {
             ",
             self.id
         )
-        .fetch_many(conn)
+        .fetch_many(&mut *transaction)
         .try_filter_map(|e| async {
             Ok(e.right().map(|m| TaskGroup {
                 id: TaskGroupId(m.id),
@@ -218,7 +220,7 @@ impl Project {
 
     pub async fn get_tasks(
         &self,
-        conn: &SqlitePool
+        transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<Vec<Task>, sqlx::error::Error> {
         let tasks = sqlx::query!(
             "
@@ -230,7 +232,7 @@ impl Project {
             ",
             self.id
         )
-        .fetch_many(conn)
+        .fetch_many(&mut *transaction)
         .try_filter_map(|result| async {
             Ok(result.right().map(|row| Task {
                 id: TaskId(row.id),
@@ -248,6 +250,26 @@ impl Project {
         .await?;
 
         Ok(tasks)
+    }
+
+    pub async fn transfer_ownership(
+        project: ProjectId,
+        new_owner: ProjectMemberId,
+        transaction: &mut sqlx::Transaction<'_, Database>,
+    ) -> Result<(), sqlx::error::Error> {
+        sqlx::query!(
+            "
+            UPDATE projects
+            SET owner = $1
+            WHERE id = $2
+            ",
+            new_owner,
+            project
+        )
+        .execute(&mut *transaction)
+        .await?;
+
+        Ok(())
     }
 }
 
@@ -290,13 +312,13 @@ impl ProjectMember {
     pub async fn create(
         user: UserId,
         project: &Project,
-        conn: &SqlitePool
+        transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<ProjectMember, super::DatabaseError> {
         if project.owner.0 != user.0 {
             return Err(super::DatabaseError::AlreadyExists);
         }
 
-        let member_id = ProjectMemberId::generate(conn).await?;
+        let member_id = ProjectMemberId::generate(&mut *transaction).await?;
 
         let member = ProjectMember {
             id: member_id,
@@ -306,14 +328,14 @@ impl ProjectMember {
             accepted: true,
         };
 
-        member.insert(conn).await?;
+        member.insert(&mut *transaction).await?;
 
         Ok(member)
     }
 
     pub async fn invite(
         invitation: ProjectInvitation,
-        conn: &SqlitePool
+        transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<ProjectMember, super::DatabaseError> {
         let query = sqlx::query!(
             "
@@ -328,14 +350,14 @@ impl ProjectMember {
             invitation.user.0,
             invitation.project.0
         )
-        .fetch_one(conn)
+        .fetch_one(&mut *transaction)
         .await?;
 
         if query.member_exists.is_positive() {
             return Err(super::DatabaseError::AlreadyExists);
         }
 
-        let member_id = ProjectMemberId::generate(conn).await?;
+        let member_id = ProjectMemberId::generate(&mut *transaction).await?;
 
         let member = ProjectMember {
             id: member_id,
@@ -345,14 +367,14 @@ impl ProjectMember {
             accepted: false,
         };
 
-        member.insert(conn).await?;
+        member.insert(&mut *transaction).await?;
 
         Ok(member)
     }
 
     pub async fn from_request(
         req: HttpRequest,
-        conn: &SqlitePool
+        transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<Option<Self>, super::DatabaseError> {
         if let Some(id) = req.extensions().get::<ProjectMemberId>() {
             let query = sqlx::query!(
@@ -365,7 +387,7 @@ impl ProjectMember {
                 ",
                 id
             )
-            .fetch_optional(conn)
+            .fetch_optional(&mut *transaction)
             .await?;
 
             if let Some(row) = query {
@@ -384,7 +406,7 @@ impl ProjectMember {
     pub async fn from_user_for_project(
         user: UserId,
         project: ProjectId,
-        conn: &SqlitePool
+        transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<Option<Self>, sqlx::error::Error> {
         let query = sqlx::query!(
             "
@@ -398,7 +420,7 @@ impl ProjectMember {
             user.0,
             project.0
         )
-        .fetch_optional(conn)
+        .fetch_optional(&mut *transaction)
         .await?;
 
         if let Some(row) = query {
@@ -416,7 +438,7 @@ impl ProjectMember {
 
     pub async fn from_user(
         user: UserId,
-        conn: &SqlitePool
+        transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<Vec<Self>, sqlx::error::Error> {
         let query = sqlx::query!(
             "
@@ -428,7 +450,7 @@ impl ProjectMember {
             ",
             user.0
         )
-        .fetch_many(conn)
+        .fetch_many(&mut *transaction)
         .try_filter_map(|e| async {
             Ok(e.right().map(|m| Self {
                 id: ProjectMemberId(m.id),
@@ -446,7 +468,7 @@ impl ProjectMember {
 
     pub async fn insert(
         &self,
-        conn: &SqlitePool
+        transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<(), sqlx::error::Error> {
         let permssions = self.permissions.bits() as i64;
 
@@ -466,7 +488,7 @@ impl ProjectMember {
             permssions,
             self.accepted
         )
-        .execute(conn)
+        .execute(&mut *transaction)
         .await?;
 
         Ok(())
@@ -474,7 +496,7 @@ impl ProjectMember {
 
     pub async fn accept_invitation(
         &self,
-        conn: &SqlitePool
+        transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<(), sqlx::error::Error> {
         sqlx::query!(
             "
@@ -484,7 +506,7 @@ impl ProjectMember {
             ",
             self.id
         )
-        .execute(conn)
+        .execute(&mut *transaction)
         .await?;
 
         Ok(())
@@ -492,7 +514,7 @@ impl ProjectMember {
 
     pub async fn deny_invitation(
         &self,
-        conn: &SqlitePool
+        transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<(), sqlx::error::Error> {
         sqlx::query!(
             "
@@ -501,7 +523,7 @@ impl ProjectMember {
             ",
             self.id
         )
-        .execute(conn)
+        .execute(&mut *transaction)
         .await?;
 
         Ok(())
