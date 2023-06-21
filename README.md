@@ -4,7 +4,7 @@
 
 <img style="width: 10em;" src="site/public/svg/base/fern.svg" alt="fern"/>
 
-Nine Yards (As in "going the whole nine yards") is a self hosted, free, and open source team and project management tool. Like Trello or Asana just you dont spend your life savings on the utilities your team wants needs and everything inbetween.
+Nine Yards (As in "going the whole nine yards") is a self hosted, free, and open source team and project management tool. Like Trello or Asana, just you don't spend your life savings on the utilities your team wants, needs and everything in between.
 
 </div>
 
@@ -12,19 +12,19 @@ Nine Yards (As in "going the whole nine yards") is a self hosted, free, and open
 
 ## Features
 
-TODO: Waffle about fancy features with some pretty pictures as example
+TODO
 
 ---
 
 ## Getting started with Nine Yards
 
-Nine Yards can be ran in multiple configurations so you'll need to make some choices before getting started. 
+Nine Yards can be run in multiple configurations so you'll need to make some choices before getting started. 
 
-If you dont already have an idea of where you can host your own Nine Yards instance look [here](#what-if-i-dont-have-a-server).
+If you don't already have an idea of where you can host your own Nine Yards instance look [here](#what-if-i-dont-have-a-server).
 
 #### Picking a database
 
-Nine Yards fully supports both SQLite and Postgres functionality wise you'll see no difference. By default SQLite is used for ease of setup but if you are expecting many concurrent users often, or for any other reason you may want to use postgres instead.
+Nine Yards fully supports both SQLite and Postgres functionality wise you'll see no difference. By default SQLite is used for ease of setup but if you are expecting many concurrent users often, or or any other reason, you may want to use postgres instead.
 
 #### Hosting the site
 
@@ -36,7 +36,7 @@ TODO
 
 ### Building From Source
 
-To build Nine Yards from source you need some tools first. For the backend install [Rust through Rustup](https://www.rust-lang.org/tools/install) and for the front end [Node.js](https://nodejs.org/en) aswell as [pnpm](https://pnpm.io/installation#using-npm) which can be installed using npm which is bundled with Node.js.
+To build Nine Yards from source you need some tools first. For the backend install [Rust through Rustup](https://www.rust-lang.org/tools/install) and for the front end [Node.js](https://nodejs.org/en) aswell as [pnpm](https://pnpm.io/installation#using-npm) which can be installed using npm, which is bundled with Node.js.
 
 #### Getting the source
 
@@ -81,15 +81,14 @@ cargo build --release --features=postgres
 
 ## What if I don't have a server?
 
-There are many great options for hosting Nine Yards both cloud and localy. If you are looking for something free Oracle Web Infrastructure's free trial is permanent and more than powerful enough, a full specification list can be found [here](https://www.oracle.com/cloud/free/). 
+There are many great options for hosting Nine Yards both cloud and localy. If you are looking for something free, Oracle Web Infrastructure's free trial is permanent and more than powerful enough' a full specification list can be found [here](https://www.oracle.com/cloud/free/). 
 
-As well as this they offer splitting your resources between multiple instances which can be useful if you are intending on running Nine Yards split allowing you to take advantage of SSR to improve site performance and allowing for the front end and backend to be scaled seperately if needed with minimal difficulty
-
+As well as this, they offer splitting your resources between multiple instances, which can be useful if you are intending on running Nine Yards split, allowing you to take advantage of server side rendering, to improve site performance and allowing for the front end and backend to be scaled seperately with minimal difficulty if needed. 
 ---
 
 ## Tech Stack
 
-For contributors or anyone interrested in how Nine Yards works
+For contributors or anyone interrested in how Nine Yards works:
 
 - Frontend - [Nuxt](https://nuxt.com/), [Vue](https://vuejs.org/), [Sass](https://sass-lang.com/), [Pug](https://pugjs.org/api/getting-started.html)
 - Backend - [Rust](https://www.rust-lang.org/), [Actix Web](https://actix.rs/), [sqlx](https://github.com/launchbadge/sqlx)
