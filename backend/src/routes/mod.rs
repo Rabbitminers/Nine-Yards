@@ -3,6 +3,7 @@ use actix_web::{HttpResponse, body::BoxBody};
 pub mod user_routes;
 pub mod project_routes;
 pub mod task_routes;
+pub mod task_group_routes;
 
 pub fn config(cfg: &mut actix_web::web::ServiceConfig) {
     cfg.service(
@@ -32,8 +33,8 @@ pub enum ApiError {
     #[error("Error while validating input: {0}")]
     Validation(String),
 
-    #[error("Could not find item '{0}' in '{1}'")]
-    NotFound(String, String),
+    #[error("Could not find: {0}")]
+    NotFound(String),
 
     #[error("Authentication Error: {0}")]
     Unauthorized(#[from] crate::utilities::auth_utils::AuthenticationError),

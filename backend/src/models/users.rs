@@ -1,6 +1,5 @@
 use actix_web::{HttpRequest, HttpMessage};
 use bcrypt::{DEFAULT_COST, hash, verify};
-use sqlx::SqlitePool;
 use uuid::Uuid;
 use validator::Validate;
 use crate::{models::login_history::LoginHistory, utilities::auth_utils::AuthenticationError, routes::ApiError, database::{Database, SqlPool}};
@@ -136,7 +135,6 @@ impl User {
         .execute(&mut *transaction)
         .await?;
         
-
         Ok(Some(LoginSession {
             username: user.username,
             login_session: session
@@ -256,10 +254,13 @@ impl User {
         Ok(query.member_exists.is_positive())
     }
 
-    pub async fn find_by_login_session(
+    pub async fn find_by_login_session<'a, E>(
         token: &UserToken,
-        transaction: &mut sqlx::Transaction<'_, Database>,
-    ) -> Result<Option<Self>, sqlx::error::Error> {
+        transaction: E,
+    ) -> Result<Option<Self>, sqlx::error::Error> 
+    where
+        E: sqlx::Executor<'a, Database = Database>,
+    {
         let result = sqlx::query!(
             "
             SELECT id, username, password, 
@@ -269,7 +270,7 @@ impl User {
             ",
             token.login_session
         )
-        .fetch_optional(&mut *transaction)
+        .fetch_optional(transaction)
         .await?;
 
         if let Some(row) = result {

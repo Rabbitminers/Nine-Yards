@@ -9,7 +9,6 @@ use futures::FutureExt;
 use futures::future::{ready, LocalBoxFuture, Ready};
 
 use crate::database::{SqlPool, DatabaseError};
-use crate::routes::ApiError;
 use crate::utilities::token_utils;
 
 pub struct Authenticator;
@@ -59,6 +58,8 @@ where
             })
             .unwrap_or_else(String::new);
 
+        println!("Hello world!");
+
         let pool = req.app_data::<Data<SqlPool>>()
             .unwrap()
             .clone();
@@ -67,6 +68,7 @@ where
 
         async move {
             if let Some(user) = token_utils::is_valid_token(token, &pool).await {
+                println!("User: {:?}", user.username);
                 req.extensions_mut().insert(user.id);
             }
             let res = srv.call(req).await?;

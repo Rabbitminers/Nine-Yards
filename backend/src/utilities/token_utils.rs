@@ -5,7 +5,7 @@ use crate::{models::{
     }, users::User
 }, routes::ApiError};
 use jsonwebtoken::{DecodingKey, TokenData, Validation};
-use sqlx::SqlitePool;
+use crate::database::SqlPool;
 
 use super::auth_utils::AuthenticationError;
 
@@ -21,21 +21,20 @@ pub fn decode_token(
 
 pub async fn verify_token(
     token_data: &TokenData<UserToken>,
-    pool: &SqlitePool,
+    pool: &SqlPool,
 ) -> Result<User, ApiError> {
-    let mut transaction = pool.begin().await?;
-    if let Ok(Some(user)) = User::find_by_login_session(&token_data.claims, &mut transaction).await {
-        transaction.commit().await?;
+    if let Ok(Some(user)) = User::find_by_login_session(&token_data.claims, pool).await {
+        println!("Found user: {:?}", user.username);
         Ok(user)
     } else {
-        transaction.rollback().await?;
+        println!("No user found");
         Err(AuthenticationError::InvalidToken.into())
     }
 }
 
 pub async fn is_valid_token(
     token: String,
-    pool: &SqlitePool,
+    pool: &SqlPool,
 ) -> Option<User> {
     if let Ok(token_data) = decode_token(token) {
         match verify_token(&token_data, &pool).await {
@@ -43,6 +42,7 @@ pub async fn is_valid_token(
             Err(_) => None
         }
     } else {
+        println!("Malformed token");
         None
     }
 }

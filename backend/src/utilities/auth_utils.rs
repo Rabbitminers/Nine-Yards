@@ -17,6 +17,9 @@ pub enum AuthenticationError {
     #[error("You are not authorized to perform this action")]
     Unauthorized,
 
+    #[error("You do not have sufficient permissions to perform this action")]
+    MissingPermissions,
+
     #[error("Invalid or missing token. Please login again")]
     InvalidToken,
 

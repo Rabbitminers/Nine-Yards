@@ -1,5 +1,5 @@
 use chrono::{NaiveDateTime, Local};
-use sqlx::{Sqlite, SqlitePool};
+use sqlx::SqlitePool;
 
 use crate::database::Database;
 use futures::{TryStreamExt, StreamExt, FutureExt};

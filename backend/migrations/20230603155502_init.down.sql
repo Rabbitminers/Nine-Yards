@@ -15,4 +15,6 @@ DROP TABLE IF EXISTS lables;
 
 DROP TABLE IF EXISTS sub_tasks;
 
+DROP TABLE IF EXISTS audit_logs;
+
 DROP TABLE IF EXISTS notifications;

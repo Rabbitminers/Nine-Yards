@@ -5,7 +5,7 @@ use crate::database::Database;
 use chrono::{Utc, NaiveDateTime};
 use futures::TryStreamExt;
 
-
+#[derive(Serialize)]
 pub struct Audit {
     pub id: AuditId,
     pub auditor: ProjectMemberId,
@@ -16,7 +16,7 @@ pub struct Audit {
 
 impl Audit {
     pub async fn create(
-        auditor: ProjectMember,
+        auditor: &ProjectMember,
         body: String,
         transaction: &mut sqlx::Transaction<'_, Database>
     ) -> Result<Self, super::DatabaseError> {
@@ -24,8 +24,8 @@ impl Audit {
 
         let audit = Self {
             id,
-            auditor: auditor.id,
-            project_id: auditor.project_id,
+            auditor: auditor.id.clone(),
+            project_id: auditor.project_id.clone(),
             body,
             timestamp: Utc::now().naive_utc(),
         };
@@ -64,10 +64,13 @@ impl Audit {
         }
     }
 
-    pub async fn get_many(
+    pub async fn get_many<'a, E>(
         project_id: ProjectId,
-        transaction: &mut sqlx::Transaction<'_, Database>
-    ) -> Result<Vec<Self>, sqlx::error::Error> {
+        transaction: E
+    ) -> Result<Vec<Self>, sqlx::error::Error>
+    where
+        E: sqlx::Executor<'a, Database = Database>,
+    {
         let audit_log = sqlx::query!(
             "
             SELECT id, auditor, project_id, 
@@ -77,7 +80,7 @@ impl Audit {
             ",
             project_id
         )
-        .fetch_many(&mut *transaction)
+        .fetch_many(transaction)
         .try_filter_map(|e| async {
             Ok(e.right().map(|m| Self {
                 id: AuditId(m.id),

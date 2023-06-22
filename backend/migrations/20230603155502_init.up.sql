@@ -61,7 +61,16 @@ CREATE TABLE IF NOT EXISTS sub_tasks (
     task_id TEXT REFERENCES tasks NOT NULL,
     assignee TEXT REFERENCES project_members,
     body TEXT NOT NULL,
+    weight INTEGER,
     completed BOOLEAN NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS audit_log (
+    id TEXT PRIMARY KEY NOT NULL,
+    auditor TEXT REFERENCES project_members NOT NULL,
+    project_id TEXT REFERENCES projects NOT NULL,
+    body TEXT NOT NULL,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS notifications (

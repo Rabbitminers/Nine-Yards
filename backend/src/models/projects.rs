@@ -65,16 +65,18 @@ impl Project {
         sqlx::query!(
             "
             INSERT INTO projects (
-                id, name, owner, icon_url
+                id, name, owner, icon_url,
+                public
             )
             VALUES (
-                $1, $2, $3, $4
+                $1, $2, $3, $4, $5
             )
             ",
             self.id,
             self.name,
             self.owner,
-            self.icon_url
+            self.icon_url,
+            self.public
         )
         .execute(&mut *transaction)
         .await?;
@@ -82,10 +84,13 @@ impl Project {
         Ok(())
     }
 
-    pub async fn get(
+    pub async fn get<'a, E>(
         id: ProjectId,
-        transaction: &mut sqlx::Transaction<'_, Database>,
-    ) -> Result<Option<Self>, sqlx::error::Error> {
+        transaction: E,
+    ) -> Result<Option<Self>, sqlx::error::Error>
+    where
+        E: sqlx::Executor<'a, Database = Database>,
+    { 
         let query = sqlx::query!(
             "
             SELECT id, name, owner,
@@ -95,7 +100,7 @@ impl Project {
             ",
             id
         )
-        .fetch_optional(&mut *transaction)
+        .fetch_optional(transaction)
         .await?;
 
         if let Some(row) = query {
@@ -161,10 +166,13 @@ impl Project {
         Ok(())
     }
 
-    pub async fn get_members(
-        &self, 
-        transaction: &mut sqlx::Transaction<'_, Database>,
-    ) -> Result<Vec<ProjectMember>, sqlx::Error> {
+    pub async fn get_members<'a, E>(
+        id: ProjectId,
+        transaction: E,
+    ) -> Result<Vec<ProjectMember>, sqlx::Error>
+    where
+        E: sqlx::Executor<'a, Database = Database>,
+    {
         let users = sqlx::query!(
             "
             SELECT id, project_id, user_id, 
@@ -172,9 +180,9 @@ impl Project {
             FROM project_members 
             WHERE project_id = ?
             ",
-            self.id
+            id
         )
-        .fetch_many(&mut *transaction)
+        .fetch_many(transaction)
         .try_filter_map(|e| async {
             Ok(e.right().map(|m| ProjectMember {
                 id: ProjectMemberId(m.id),
@@ -190,10 +198,13 @@ impl Project {
         Ok(users)
     }
 
-    pub async fn get_task_groups(
+    pub async fn get_task_groups<'a, E> ( 
         id: ProjectId,
-        transaction: &mut sqlx::Transaction<'_, Database>,
-    ) -> Result<Vec<TaskGroup>, sqlx::error::Error> {
+        transaction: E,
+    ) -> Result<Vec<TaskGroup>, sqlx::error::Error>
+    where
+        E: sqlx::Executor<'a, Database = Database>,
+    {
         let task_groups = sqlx::query!(
             "
             SELECT id, project_id, name, position
@@ -202,7 +213,7 @@ impl Project {
             ",
             id
         )
-        .fetch_many(&mut *transaction)
+        .fetch_many(transaction)
         .try_filter_map(|e| async {
             Ok(e.right().map(|m| TaskGroup {
                 id: TaskGroupId(m.id),
@@ -372,10 +383,13 @@ impl ProjectMember {
         Ok(member)
     }
 
-    pub async fn from_request(
+    pub async fn from_request<'a, E>(
         req: HttpRequest,
-        transaction: &mut sqlx::Transaction<'_, Database>,
-    ) -> Result<Option<Self>, super::DatabaseError> {
+        transaction: E,
+    ) -> Result<Option<Self>, super::DatabaseError>
+    where
+        E: sqlx::Executor<'a, Database = Database>,
+    {
         if let Some(id) = req.extensions().get::<ProjectMemberId>() {
             let query = sqlx::query!(
                 "
@@ -387,7 +401,7 @@ impl ProjectMember {
                 ",
                 id
             )
-            .fetch_optional(&mut *transaction)
+            .fetch_optional(transaction)
             .await?;
 
             if let Some(row) = query {
@@ -403,11 +417,14 @@ impl ProjectMember {
         Ok(None)
     }
 
-    pub async fn from_user_for_project(
+    pub async fn from_user_for_project<'a, E> (
         user: UserId,
         project: ProjectId,
-        transaction: &mut sqlx::Transaction<'_, Database>,
-    ) -> Result<Option<Self>, sqlx::error::Error> {
+        transaction: E,
+    ) -> Result<Option<Self>, sqlx::error::Error>
+    where
+        E: sqlx::Executor<'a, Database = Database>,
+    {
         let query = sqlx::query!(
             "
             SELECT id, project_id,
@@ -420,7 +437,7 @@ impl ProjectMember {
             user.0,
             project.0
         )
-        .fetch_optional(&mut *transaction)
+        .fetch_optional(transaction)
         .await?;
 
         if let Some(row) = query {
