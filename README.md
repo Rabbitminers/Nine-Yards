@@ -1,12 +1,9 @@
-<div style="text-align: center">
-
-# Nine-Yards
-
-<img style="width: 10em;" src="site/public/svg/base/fern.svg" alt="fern"/>
+<p align="center">
+<img style="width: 15em;" src="display/fern.svg" alt="fern"/>
+<h1 align="center"> Nine Yards </h1>
+</p>
 
 Nine Yards (As in "going the whole nine yards") is a self hosted, free, and open source team and project management tool. Like Trello or Asana, just you don't spend your life savings on the utilities your team wants, needs and everything in between.
-
-</div>
 
 ---
 
@@ -94,6 +91,17 @@ For contributors or anyone interrested in how Nine Yards works:
 - Frontend - [Nuxt](https://nuxt.com/), [Vue](https://vuejs.org/), [Sass](https://sass-lang.com/), [Pug](https://pugjs.org/api/getting-started.html)
 - Backend - [Rust](https://www.rust-lang.org/), [Actix Web](https://actix.rs/), [sqlx](https://github.com/launchbadge/sqlx)
 - Database - [Sqlite](https://www.sqlite.org/index.html) / [Postgres]("https://www.postgresql.org/")
+
+---
+
+## Want Help?
+
+Have an issue, a feature requst or just want to ask a question? You can contact us over email, here on github or on discord in the server below
+
+[![Discord][1]][2]
+
+[1]: https://discordapp.com/api/guilds/1069326955742244884/widget.png?style=banner2
+[2]: https://discord.gg/GJsQadv9Mc
 
 ---
 
