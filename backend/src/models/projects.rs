@@ -4,7 +4,6 @@ use super::ids::{ProjectId, TaskGroupId, TaskId, UserId, ProjectMemberId};
 use super::tasks::{TaskGroup, Task};
 use actix_web::HttpRequest;
 use futures::TryStreamExt;
-use sqlx::SqlitePool;
 use actix_web::HttpMessage;
 
 #[derive(Serialize, Deserialize)]
@@ -130,13 +129,13 @@ impl Project {
     }
 
     pub async fn remove(
-        &self,
+        id: ProjectId,
         transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<(), sqlx::error::Error> {
-        let task_groups = self.get_task_groups(&mut *transaction).await?;
+        let task_groups = Self::get_task_groups(id.clone(), &mut *transaction).await?;
         
         for group in task_groups {
-            group.remove(&mut *transaction).await?;
+            TaskGroup::remove(id.clone(), group.id, &mut *transaction).await?;
         }
 
         sqlx::query!(
@@ -144,7 +143,7 @@ impl Project {
             DELETE FROM project_members
             WHERE project_id = $1
             ",
-            self.id
+            id
         )
         .execute(&mut *transaction)
         .await?;
@@ -154,7 +153,7 @@ impl Project {
             DELETE FROM projects
             WHERE id = $1
             ",
-            self.id
+            id
         )
         .execute(&mut *transaction)
         .await?;
@@ -166,7 +165,7 @@ impl Project {
         &self, 
         transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<Vec<ProjectMember>, sqlx::Error> {
-        let users =sqlx::query!(
+        let users = sqlx::query!(
             "
             SELECT id, project_id, user_id, 
                 permissions, accepted 
@@ -192,7 +191,7 @@ impl Project {
     }
 
     pub async fn get_task_groups(
-        &self,
+        id: ProjectId,
         transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<Vec<TaskGroup>, sqlx::error::Error> {
         let task_groups = sqlx::query!(
@@ -201,7 +200,7 @@ impl Project {
             FROM task_groups
             WHERE project_id = $1
             ",
-            self.id
+            id
         )
         .fetch_many(&mut *transaction)
         .try_filter_map(|e| async {
@@ -225,8 +224,8 @@ impl Project {
         let tasks = sqlx::query!(
             "
             SELECT id, project_id, task_group_id, 
-                 name, information, creator, due, 
-                 primary_colour, accent_colour
+            name, information, creator, due, 
+            primary_colour, accent_colour, created
             FROM tasks
             WHERE project_id = $1
             ",
@@ -244,6 +243,7 @@ impl Project {
                 due: row.due,
                 primary_colour: row.primary_colour,
                 accent_colour: row.accent_colour,
+                created: row.created
             }))
         })
         .try_collect::<Vec<Task>>()
