@@ -7,6 +7,7 @@ pub mod ids;
 pub mod tasks;
 pub mod login_history;
 pub mod notifications;
+pub mod audit;
 
 #[derive(Error, Debug)]
 pub enum DatabaseError {

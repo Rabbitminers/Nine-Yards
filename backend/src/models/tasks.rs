@@ -1,18 +1,12 @@
-use chrono::NaiveDateTime;
-use sqlx::SqlitePool;
+use chrono::{NaiveDateTime, Local};
+use sqlx::{Sqlite, SqlitePool};
 
 use crate::database::Database;
+use futures::{TryStreamExt, StreamExt, FutureExt};
 
-use super::{
-    ids::{
-        TaskId, 
-        ProjectId, 
-        TaskGroupId, 
-        UserId, SubTaskId, ProjectMemberId, 
-    }, 
-    users::User
-};
+use super::ids::{TaskId, ProjectId, TaskGroupId, UserId, SubTaskId, ProjectMemberId, };
 
+#[derive(Serialize, Deserialize)]
 pub struct TaskGroup {
     pub id: TaskGroupId,
     pub project_id: ProjectId,
@@ -20,9 +14,9 @@ pub struct TaskGroup {
     pub position: i64
 }
 
+#[derive(Serialize, Deserialize, Validate)]
 pub struct TaskGroupBuilder {
-    pub creator: User,
-    pub project_id: ProjectId,
+    #[validate(length(min = 3, max = 30))]
     pub name: String,
     pub position: i64 // Got to have room for your 9223372036854775807 task groups!
 }
@@ -30,9 +24,10 @@ pub struct TaskGroupBuilder {
 impl TaskGroupBuilder {
     pub async fn create(
         self,
+        project_id: ProjectId,
         transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<TaskGroup, super::DatabaseError> {
-        if let Ok(Some(_)) = TaskGroup::find_by_name(&self.name, &mut *transaction).await {
+        if let Ok(Some(_)) = TaskGroup::get_by_name(project_id.clone(), &self.name, &mut *transaction).await {
             return Err(super::DatabaseError::AlreadyExists);
         }
 
@@ -40,7 +35,7 @@ impl TaskGroupBuilder {
 
         let group = TaskGroup {
             id,
-            project_id: self.project_id,
+            project_id: project_id,
             name: self.name,
             position: self.position
         };
@@ -52,17 +47,50 @@ impl TaskGroupBuilder {
 }
 
 impl TaskGroup {
-    pub async fn find_by_name(
-        name: &String,
+    pub async fn get(
+        task_group_id: TaskGroupId,
+        project_id: ProjectId,
         transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<Option<Self>, sqlx::error::Error> {
         let result = sqlx::query!(
             "
             SELECT id, project_id, name, position
             FROM task_groups
-            WHERE name = $1
+            WHERE id = $1
+            AND project_id = $2
             ",
-            name
+            task_group_id, 
+            project_id // Prevent unauthorized reads
+        )
+        .fetch_optional(&mut *transaction)
+        .await?;
+        
+        if let Some(row) = result {
+            Ok(Some(Self {
+                id: TaskGroupId(row.id),
+                project_id: ProjectId(row.project_id),
+                name: row.name,
+                position: row.position
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub async fn get_by_name(
+        project_id: ProjectId,
+        name: &str,
+        transaction: &mut sqlx::Transaction<'_, Database>
+    ) -> Result<Option<Self>, sqlx::error::Error> {
+        let result = sqlx::query!(
+            "
+            SELECT id, project_id, name, position
+            FROM task_groups
+            WHERE name = $1
+            AND project_id = $2
+            ",
+            name, 
+            project_id // Prevent unauthorized reads
         )
         .fetch_optional(&mut *transaction)
         .await?;
@@ -103,16 +131,109 @@ impl TaskGroup {
         Ok(())
     }
 
+    pub async fn get_tasks(
+        project_id: ProjectId,
+        group_id: TaskGroupId,
+        transaction: &mut sqlx::Transaction<'_, Database>
+    ) -> Result<Vec<Task>, sqlx::error::Error> {
+        let tasks = sqlx::query!(
+            "
+            SELECT id, project_id, task_group_id, 
+            name, information, creator, due, 
+            primary_colour, accent_colour, created
+            FROM tasks
+            WHERE task_group_id = $1
+            ",
+            group_id
+        )
+        .fetch_many(&mut *transaction)
+        .try_filter_map(|e| async {
+            Ok(e.right().map(|m| Task {
+                id: TaskId(m.id),
+                project_id: ProjectId(m.project_id),
+                task_group_id: TaskGroupId(m.task_group_id),
+                name: m.name,
+                information: m.information,
+                creator: UserId(m.creator),
+                due: m.due,
+                primary_colour: m.primary_colour,
+                accent_colour: m.accent_colour,
+                created: m.created
+            }))
+        })
+        .try_collect::<Vec<Task>>()
+        .await?;
+
+        Ok(tasks)
+    }
+
+    pub async fn get_tasks_full(
+        project_id: ProjectId,
+        group_id: TaskGroupId,
+        conn: &SqlitePool
+    ) -> Result<Vec<TaskResponse>, sqlx::error::Error> {
+        let query = sqlx::query!(
+            "
+            SELECT id, project_id, task_group_id, 
+            name, information, creator, due, 
+            primary_colour, accent_colour, created
+            FROM tasks
+            WHERE task_group_id = $1
+            AND project_id = $2
+            ",
+            group_id,
+            project_id
+        )
+        .fetch_many(conn)
+        .try_filter_map(|e| async {
+            if let Some(m) = e.right() {
+                let mut transaction = conn.begin().await?;
+
+                let id = TaskId(m.id);
+                let sub_tasks = Task::get_sub_tasks(id.clone(), &mut transaction).await?;
+
+                transaction.commit().await?;
+
+                Ok(Some(Ok(TaskResponse {
+                    id,
+                    project_id: ProjectId(m.project_id),
+                    task_group_id: TaskGroupId(m.task_group_id),
+                    name: m.name,
+                    information: m.information,
+                    creator: UserId(m.creator),
+                    due: m.due,
+                    primary_colour: m.primary_colour,
+                    accent_colour: m.accent_colour,
+                    sub_tasks,
+                    created: m.created
+                })))
+            } else {
+                Ok(None)
+            }
+        })
+        .try_collect::<Vec<Result<TaskResponse, sqlx::error::Error>>>()
+        .await?;
+
+        let responses = query
+            .into_iter()
+            .collect::<Result<Vec<TaskResponse>, sqlx::error::Error>>()?;
+
+        Ok(responses)
+    }
+
     pub async fn remove(
-        &self,
+        project_id: ProjectId,
+        id: TaskGroupId,
         transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<(), sqlx::error::Error> {
         sqlx::query!(
             "
             DELETE FROM tasks
             WHERE task_group_id = $1
+            AND project_id = $2
             ",
-            self.id
+            id,
+            project_id
         )
         .execute(&mut *transaction)
         .await?;
@@ -121,8 +242,10 @@ impl TaskGroup {
             "
             DELETE FROM task_groups
             WHERE id = $1
+            AND project_id = $2
             ",
-            self.id
+            id,
+            project_id
         )
         .execute(&mut *transaction)
         .await?;
@@ -143,6 +266,7 @@ pub struct Task {
     pub due: Option<NaiveDateTime>,
     pub primary_colour: String,
     pub accent_colour: String,
+    pub created: NaiveDateTime
 }
 
 #[derive(Serialize, Deserialize, Validate)]
@@ -154,6 +278,21 @@ pub struct TaskBuilder {
     pub creator: UserId,
     pub primary_colour: String,
     pub accent_colour: String,
+}
+
+#[derive(Serialize)]
+pub struct TaskResponse {
+    pub id: TaskId,
+    pub project_id: ProjectId,
+    pub task_group_id: TaskGroupId,
+    pub name: String,
+    pub information: Option<String>,
+    pub creator: UserId,
+    pub due: Option<NaiveDateTime>,
+    pub primary_colour: String,
+    pub accent_colour: String,
+    pub sub_tasks: Vec<SubTask>,
+    pub created: NaiveDateTime,
 }
 
 impl TaskBuilder {
@@ -173,6 +312,7 @@ impl TaskBuilder {
             due: None,
             primary_colour: self.primary_colour,
             accent_colour: self.accent_colour,
+            created: Local::now().naive_local()
         };
 
         task.insert(&mut *transaction).await?;
@@ -215,18 +355,21 @@ impl Task {
     }
 
     pub async fn get(
-        id: TaskId,
+        task_id: TaskId,
+        project_id: ProjectId,
         transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<Option<Self>, sqlx::error::Error> {
         let query = sqlx::query!(
             "
             SELECT id, project_id, task_group_id, 
-                 name, information, creator, due, 
-                 primary_colour, accent_colour
+            name, information, creator, due, 
+            primary_colour, accent_colour, created
             FROM tasks
             WHERE id = $1
+            AND project_id = $2
             ",
-            id
+            task_id,
+            project_id
         )
         .fetch_optional(&mut *transaction)
         .await?;
@@ -242,10 +385,82 @@ impl Task {
                 due: row.due,
                 primary_colour: row.primary_colour,
                 accent_colour: row.accent_colour,
+                created: row.created,
             }))
         } else {
             Ok(None)
         }
+    }
+
+    pub async fn get_full(
+        task_id: TaskId,
+        project_id: ProjectId,
+        transaction: &mut sqlx::Transaction<'_, Database>,
+    ) -> Result<Option<TaskResponse>, sqlx::error::Error> {
+        let query = sqlx::query!(
+            "
+            SELECT id, project_id, task_group_id, 
+                 name, information, creator, due, 
+                 primary_colour, accent_colour,
+                 created
+            FROM tasks
+            WHERE id = $1
+            AND project_id = $2
+            ",
+            task_id,
+            project_id
+        )
+        .fetch_optional(&mut *transaction)
+        .await?;
+        
+        if let Some(row) = query {
+            let sub_tasks = Self::get_sub_tasks(task_id, transaction).await?;
+
+            Ok(Some(TaskResponse {
+                id: TaskId(row.id),
+                project_id: ProjectId(row.project_id),
+                task_group_id: TaskGroupId(row.task_group_id),
+                name: row.name,
+                information: row.information,
+                creator: UserId(row.creator),
+                due: row.due,
+                primary_colour: row.primary_colour,
+                accent_colour: row.accent_colour,
+                sub_tasks,
+                created: row.created,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub async fn get_sub_tasks(
+        task_id: TaskId,
+        transaction: &mut sqlx::Transaction<'_, Database>
+    ) -> Result<Vec<SubTask>, sqlx::error::Error> {
+        let sub_tasks = sqlx::query!(
+            "
+            SELECT id, task_id, assignee,
+            body, completed
+            FROM sub_tasks
+            WHERE task_id = $1
+            ",
+            task_id
+        )
+        .fetch_many(&mut *transaction)
+        .try_filter_map(|e| async {
+            Ok(e.right().map(|m| SubTask {
+                id: SubTaskId(m.id),
+                task_id: TaskId(m.task_id),
+                assignee: m.assignee.map(ProjectMemberId),
+                body: m.body,
+                completed: m.completed
+            }))
+        })
+        .try_collect::<Vec<SubTask>>()
+        .await?;
+
+        Ok(sub_tasks)
     }
 
     pub async fn delete(
