@@ -1,0 +1,70 @@
+:root {
+    --colour-orange: #FEE4CB;
+    --colour-orange-accent: #FF942E;
+    --colour-purple: #E9E7FD;
+    --colour-purple-accent: #4F3FF0;
+    --colour-blue: #DBF6FD;
+    --colour-blue-accent: #096C86;
+    --colour-pink: #FFD3E2;
+    --colour-pink-accent: #DF3670;
+    --colour-green: #C8F7DC;
+    --colour-green-accent: #34C471;
+    --colour-darker-blue: #D5DEFF;
+    --colour-darker-blue-accent: #4067F9;
+}
+
+.dark:root {
+    --colour-orange: #ffc892;
+    --colour-orange-accent: #FF942E;
+    --colour-purple: #b6afff;
+    --colour-purple-accent: #4F3FF0;
+    --colour-blue: #93e9ff;
+    --colour-blue-accent: #096C86;
+    --colour-pink: #ffa4c3;
+    --colour-pink-accent: #DF3670;
+    --colour-green: #a0f6c5;
+    --colour-green-accent: #34C471;
+    --colour-darker-blue: #99afff;
+    --colour-darker-blue-accent: #4067F9;
+}
+
+:root {
+    --app-container: #f3f6fd;
+    --main-color: #1f1c2e;
+    --secondary-color: #4A4A4A;
+    --link-color: #1f1c2e;
+    --link-color-hover: #c3cff4;
+    --link-color-active: #fff;
+    --link-color-active-bg: #1f1c2e;
+    --projects-section: #fff;
+    --update-box-hover: #fafcff;
+    --update-box-border: #e9ebf0;
+    --more-list-bg: #fff;
+    --more-list-bg-hover: #f6fbff;
+    --more-list-shadow: rgba(209, 209, 209, 0.4);
+    --button-bg: #1f1c24;
+    --search-area-bg: #fff;
+    --star: #1ff1c2e;
+    --update-btn: #fff;
+}
+
+.dark:root {
+    --app-container: #1f1d2b;
+    --app-container: #111827;
+    --main-color: #fff;
+    --secondary-color: rgba(255, 255, 255, .8);
+    --projects-section: #1f2937;
+    --link-color: rgba(255, 255, 255, .8);
+    --link-color-hover: rgba(195, 207, 244, 0.1);
+    --link-color-active-bg: rgba(195, 207, 244, 0.2);
+    --button-bg: #1f2937;
+    --search-area-bg: #1f2937;
+    --update-box-hover: #243244;
+    --update-box-border: rgba(255, 255, 255, .1);
+    --star: #ffd92c;
+    --light-font: rgba(255, 255, 255, .8);
+    --more-list-bg: #2f3142;
+    --more-list-bg-hover: rgba(195, 207, 244, 0.1);
+    --more-list-shadow: rgba(195, 207, 244, 0.1);
+    --update-btn: rgba(195, 207, 244, 0.1);
+}
