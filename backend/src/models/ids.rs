@@ -135,6 +135,19 @@ id_type!(
 
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[sqlx(transparent)]
+pub struct AuditId(pub String);
+
+id_type!(
+    pub,
+    AuditId,
+    12,
+    "SELECT COUNT(*) as count FROM audit_log WHERE id = ?"
+);
+
+
+
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[sqlx(transparent)]
 pub struct NotifcationId(pub String);
 
 id_type!(
