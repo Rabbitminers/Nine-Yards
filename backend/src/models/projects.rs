@@ -282,6 +282,27 @@ impl Project {
 
         Ok(())
     }
+
+    pub async fn is_public<'a, E>(
+        project_id: ProjectId,
+        executor: E
+    ) -> Result<bool, super::DatabaseError>
+    where
+        E: sqlx::Executor<'a, Database = Database>,
+    {
+        let query = sqlx::query!(
+            "
+            SELECT public
+            FROM projects
+            WHERE id = $1
+            ",
+            project_id
+        )
+        .fetch_one(executor)
+        .await?; // Return database error for easier mapping in middleware
+    
+        Ok(query.public) 
+    }
 }
 
 bitflags::bitflags! {
