@@ -137,11 +137,35 @@ impl Project {
         id: ProjectId,
         transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<(), sqlx::error::Error> {
-        let task_groups = Self::get_task_groups(id.clone(), &mut *transaction).await?;
-        
-        for group in task_groups {
-            TaskGroup::remove(id.clone(), group.id, &mut *transaction).await?;
-        }
+        sqlx::query!(
+            "
+            DELETE FROM sub_tasks
+            WHERE project_id = $1
+            ",
+            id
+        )
+        .execute(&mut *transaction)
+        .await?;
+
+        sqlx::query!(
+            "
+            DELETE FROM tasks
+            WHERE project_id = $1
+            ",
+            id
+        )
+        .execute(&mut *transaction)
+        .await?;
+
+        sqlx::query!(
+            "
+            DELETE FROM task_groups
+            WHERE project_id = $1
+            ",
+            id
+        )
+        .execute(&mut *transaction)
+        .await?;
 
         sqlx::query!(
             "

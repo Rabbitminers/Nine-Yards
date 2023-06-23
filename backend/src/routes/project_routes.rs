@@ -1,12 +1,13 @@
 use crate::database::SqlPool;
 use crate::models::audit::Audit;
-use crate::models::projects::{ProjectBuilder, Project};
+use crate::models::projects::{ProjectBuilder, Project, ProjectMember, Permissions};
 use crate::models::users::User;
 use crate::models::ids::ProjectId;
+use crate::utilities::auth_utils::AuthenticationError::{NotMember, MissingPermissions};
 use crate::utilities::validation_utils::validation_errors_to_string;
 use crate::response;
 
-use actix_web::get;
+use actix_web::{get, delete};
 use actix_web::{web, HttpResponse, post, http::StatusCode, HttpRequest};
 use log::info;
 use validator::Validate;
@@ -87,4 +88,27 @@ pub async fn create(
 
     transaction.commit().await?;
     response!(StatusCode::OK, project, "Successfully created project")
+}
+
+#[delete("/")]
+pub async fn remove(
+    req: HttpRequest,
+    project_id: web::Path<(String,)>,
+    pool: web::Data<SqlPool>
+) -> Result<HttpResponse, super::ApiError> {
+    let mut transaction = pool.begin().await?;
+    let id = ProjectId(project_id.into_inner().0);
+
+    let member = ProjectMember::from_request(req, &mut transaction)
+        .await?
+        .ok_or_else(|| super::ApiError::Unauthorized(NotMember))?;
+
+    if !member.permissions.contains(Permissions::MANAGE_TASKS) {
+        return Err(super::ApiError::Unauthorized(MissingPermissions));
+    }
+
+    Project::remove(id, &mut transaction).await?;
+    transaction.commit().await?;
+
+    response!(StatusCode::OK, "Successfully removed project")
 }

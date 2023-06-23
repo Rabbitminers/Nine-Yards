@@ -538,8 +538,9 @@ impl Task {
     {
         let sub_tasks = sqlx::query!(
             "
-            SELECT id, task_id, assignee,
-            body, weight, position, completed
+            SELECT id, task_id, project_id,
+            assignee, body, weight, position, 
+            completed
             FROM sub_tasks
             WHERE task_id = $1
             ",
@@ -550,6 +551,7 @@ impl Task {
             Ok(e.right().map(|m| SubTask {
                 id: SubTaskId(m.id),
                 task_id: TaskId(m.task_id),
+                project_id: ProjectId(m.project_id),
                 assignee: m.assignee.map(ProjectMemberId),
                 body: m.body,
                 position: m.position,
@@ -609,6 +611,7 @@ impl Task {
 pub struct SubTask {
     pub id: SubTaskId,
     pub task_id: TaskId,
+    pub project_id: ProjectId,
     pub assignee: Option<ProjectMemberId>,
     pub body: String,
     pub weight: Option<i64>,
@@ -624,6 +627,7 @@ pub struct SubTaskBuilder {
 impl SubTaskBuilder {
     pub async fn create(
         self,
+        project_id: ProjectId,
         task_id: TaskId,
         transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<SubTask, super::DatabaseError> {
@@ -646,6 +650,7 @@ impl SubTaskBuilder {
         let sub_task = SubTask {
             id,
             task_id,
+            project_id,
             assignee: None,
             body: self.body,
             weight: None,
@@ -692,8 +697,9 @@ impl SubTask {
     ) -> Result<Option<Self>, sqlx::error::Error> {
         let query = sqlx::query!(
             "
-            SELECT id, task_id, assignee,
-            body, weight, position, completed
+            SELECT id, task_id, project_id,
+            assignee, body, weight, position, 
+            completed
             FROM sub_tasks
             WHERE id = $1
             ",
@@ -706,6 +712,7 @@ impl SubTask {
             Ok(Some(Self {
                 id: SubTaskId(row.id),
                 task_id: TaskId(row.task_id),
+                project_id: ProjectId(row.project_id),
                 assignee: row.assignee.map(ProjectMemberId),
                 body: row.body,
                 weight: row.weight,
