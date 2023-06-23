@@ -58,8 +58,6 @@ where
             })
             .unwrap_or_else(String::new);
 
-        println!("Hello world!");
-
         let pool = req.app_data::<Data<SqlPool>>()
             .unwrap()
             .clone();
@@ -68,7 +66,6 @@ where
 
         async move {
             if let Some(user) = token_utils::is_valid_token(token, &pool).await {
-                println!("User: {:?}", user.username);
                 req.extensions_mut().insert(user.id);
             }
             let res = srv.call(req).await?;

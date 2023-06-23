@@ -24,10 +24,8 @@ pub async fn verify_token(
     pool: &SqlPool,
 ) -> Result<User, ApiError> {
     if let Ok(Some(user)) = User::find_by_login_session(&token_data.claims, pool).await {
-        println!("Found user: {:?}", user.username);
         Ok(user)
     } else {
-        println!("No user found");
         Err(AuthenticationError::InvalidToken.into())
     }
 }
@@ -42,7 +40,6 @@ pub async fn is_valid_token(
             Err(_) => None
         }
     } else {
-        println!("Malformed token");
         None
     }
 }
