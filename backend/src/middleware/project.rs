@@ -10,7 +10,6 @@ use futures::FutureExt;
 use futures::future::{ready, LocalBoxFuture, Ready};
 
 use crate::database::{SqlPool};
-use crate::models::DatabaseError;
 use crate::models::ids::{ProjectId, ProjectMemberId, UserId};
 use crate::models::projects::{ProjectMember, Permissions, Project};
 use crate::routes::ApiError;

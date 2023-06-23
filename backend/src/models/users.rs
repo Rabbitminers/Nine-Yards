@@ -2,7 +2,7 @@ use actix_web::{HttpRequest, HttpMessage};
 use bcrypt::{DEFAULT_COST, hash, verify};
 use uuid::Uuid;
 use validator::Validate;
-use crate::{models::login_history::LoginHistory, utilities::auth_utils::AuthenticationError, routes::ApiError, database::{Database, SqlPool}};
+use crate::{models::login_history::LoginHistory, utilities::auth_utils::AuthenticationError, routes::ApiError, database::{Database, SqlPool}, response};
 
 use super::{ids::{UserId, ProjectId}, user_token::UserToken};
 
@@ -37,37 +37,11 @@ pub struct Login {
 
 #[derive(Serialize, Deserialize)]
 pub struct LoginSession {
-    pub username: String,
+    pub user_id: UserId,
     pub login_session: String,
 }
 
 impl User {
-    pub async fn register(
-        data: Register, 
-        transaction: &mut sqlx::Transaction<'_, Database>,
-    ) -> Result<User, super::DatabaseError> {        
-        // Check if the username is already used
-        if let Ok(Some(_)) = Self::find_by_username(&data.username, &mut *transaction).await {
-            return Err(super::DatabaseError::AlreadyExists);
-        }
-
-        // Generate password hash and new user id
-        let hashed_pwd = hash(&data.password, DEFAULT_COST).unwrap();
-        let user_id = UserId::generate(&mut *transaction).await?;
-        
-        let user: User = User {
-            id: user_id,
-            username: data.username,
-            password: hashed_pwd,
-            email: data.email,
-            login_session: None,
-        };
-
-        user.insert(&mut *transaction).await?;
-        
-        Ok(user)
-    }
-
     pub async fn logout(
         &self,
         transaction: &mut sqlx::Transaction<'_, Database>,
@@ -85,60 +59,6 @@ impl User {
         .await?;
 
         Ok(())
-    }
-
-    pub async fn login(
-        login: Login, 
-        transaction: &mut sqlx::Transaction<'_, Database>,
-    ) -> Result<Option<LoginSession>, sqlx::error::Error> {
-        let user = match login.get_user(&mut *transaction).await? {
-            Some(user) => user,
-            None => return Ok(None)
-        };
-
-        if !verify(&login.password, &user.password).unwrap()
-                || user.password.is_empty()  {
-            return Ok(None);
-        }   
-
-        if let Some(history) = LoginHistory::create(&user.username, &mut *transaction).await { 
-            sqlx::query!(
-                "
-                INSERT INTO login_history (
-                    id, user_id, login_timestamp
-                )
-                VALUES (
-                    $1, $2, $3
-                )
-                ",
-                history.id,
-                history.user_id,
-                history.login_timestamp
-            )
-            .execute(&mut *transaction)
-            .await?;
-        } else {
-            return Ok(None)
-        };
-        
-        let session = Self::generate_login_session();
-
-        sqlx::query!(
-            "
-            UPDATE users
-            SET login_session = $1
-            WHERE id = $2
-            ",
-            session,
-            user.id
-        )
-        .execute(&mut *transaction)
-        .await?;
-        
-        Ok(Some(LoginSession {
-            username: user.username,
-            login_session: session
-        }))
     }
 
     pub async fn insert(
@@ -358,8 +278,11 @@ impl User {
         Err(AuthenticationError::InvalidToken)
     }
 
-    pub fn generate_login_session() -> String {
-        Uuid::new_v4().to_simple().to_string()
+    pub fn generate_login_session(user_id: UserId) -> LoginSession {
+        LoginSession {
+            user_id,
+            login_session: Uuid::new_v4().to_simple().to_string()
+        } 
     }
 }
 
@@ -395,16 +318,83 @@ impl Login {
         }
     }
 
-    pub async fn is_valid_user(
+    pub async fn login(
         &self,
-        transaction: &mut sqlx::Transaction<'_, Database>,
-    ) -> bool {
-        let result = self.get_user(&mut *transaction).await;
+        transaction: &mut sqlx::Transaction<'_, Database>
+    ) -> Result<LoginSession, ApiError> {
+        let user = self
+            .get_user(&mut *transaction)
+            .await?
+            .ok_or(ApiError::NotFound("Could not find user".to_string()))?;
 
-        if let Ok(Some(_)) = result {
-            true
-        } else {
-            false
+        if user.login_session.is_some() {
+            return Err(AuthenticationError::AlreadyLoggedIn.into());
         }
+
+        if !bcrypt::verify(&self.password, &user.password).unwrap() {
+            return Err(AuthenticationError::InvalidCredentials.into());
+        }   
+
+        let history = LoginHistory::create(&user.username, &mut *transaction)
+            .await
+            .ok_or_else(|| ApiError::NotFound("Could not find user".to_string()))?;
+
+        sqlx::query!(
+            "
+            INSERT INTO login_history (
+                id, user_id, login_timestamp
+            )
+            VALUES (
+                $1, $2, $3
+            )
+            ",
+            history.id,
+            history.user_id,
+            history.login_timestamp
+        )
+        .execute(&mut *transaction)
+        .await?;
+
+        let session = User::generate_login_session(user.id);
+
+        sqlx::query!(
+            "
+            UPDATE users
+            SET login_session = $1
+            WHERE id = $2
+            ",
+            session.login_session,
+            session.user_id
+        )
+        .execute(&mut *transaction)
+        .await?;
+        
+        Ok(session)
+    }
+}
+
+impl Register {
+    pub async fn register(
+        self,
+        transaction: &mut sqlx::Transaction<'_, Database>,
+    ) -> Result<User, ApiError> {        
+        if User::find_by_username(&self.username, &mut *transaction).await?.is_some() {
+            return Err(ApiError::InvalidInput(format!("User '{}' already exists", self.username)))
+        }
+
+        let hashed_pwd = hash(&self.password, DEFAULT_COST).unwrap();
+        let user_id = UserId::generate(&mut *transaction).await?;
+        
+        let user: User = User {
+            id: user_id,
+            username: self.username,
+            password: hashed_pwd,
+            email: self.email,
+            login_session: None,
+        };
+
+        user.insert(&mut *transaction).await?;
+        
+        Ok(user)
     }
 }
