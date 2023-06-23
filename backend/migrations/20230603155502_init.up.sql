@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     due DATETIME,
     primary_colour TEXT NOT NULL,
     accent_colour TEXT NOT NULL,
+    position INTEGER NOT NULL,
     created DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 
@@ -62,6 +63,7 @@ CREATE TABLE IF NOT EXISTS sub_tasks (
     assignee TEXT REFERENCES project_members,
     body TEXT NOT NULL,
     weight INTEGER,
+    position INTEGER NOT NULL,
     completed BOOLEAN NOT NULL
 );
 
