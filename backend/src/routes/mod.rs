@@ -70,12 +70,12 @@ impl actix_web::error::ResponseError for ApiError {
 
 #[macro_export]
 macro_rules! response {
-    ($status:expr, $data:expr, $fmt:expr $(, $arg:expr)*)  => {
+    ($status:expr, $data:expr, $fmt:expr $(, $arg:expr)*) => {
         Ok(actix_web::HttpResponse::build($status)
             .json(crate::routes::ResponseBody::new($fmt $(, $arg)*, $data)))
     };
 
-    ($status:expr, $fmt:expr $(, $arg:expr)*)  => {
+    ($status:expr, $fmt:expr $(, $arg:expr)*) => {
         Ok(actix_web::HttpResponse::build($status)
             .json(crate::routes::ResponseBody::new($fmt $(, $arg)*, String::new())))
     };
