@@ -1,31 +1,34 @@
-use crate::{models::{users::{
-    Register, 
-    User, Login
-}, ids::UserId, user_token::UserToken}, response, constants, database::SqlPool};
-use actix_web::{
-    web,
-    HttpResponse, 
-    post, HttpRequest, get, http::StatusCode
-};
-use log::info;
+use crate::models::users::{Register, User, Login};
+use crate::models::ids::UserId;
+use crate::response;
+use crate::constants;
+use crate::database::SqlPool;
+use crate::utilities::validation_utils::validation_errors_to_string; 
+use crate::utilities::auth_utils::AuthenticationError;
+
+use super::ApiError;
+
+use actix_web::{web, HttpResponse, post, HttpRequest, get};
+use actix_web::http::StatusCode;
+
 use validator::Validate;
 
 pub fn config(cfg: &mut web::ServiceConfig) {
     cfg
         .service(
-    web::scope("/auth")
+    web::scope("/account")
                 .wrap(crate::middleware::auth::Authenticator)
                 .service(logout)
                 .service(login)
                 .service(register)
         )
         .service( 
-    web::scope("/user")
+    web::scope("/user/{id}")
                 .service(get)
         );
 }
 
-#[get("/get/{id}")]
+#[get("/")]
 pub async fn get(
     user_id: web::Path<(String,)>,
     pool: web::Data<SqlPool>
@@ -33,21 +36,10 @@ pub async fn get(
     let mut transaction = pool.begin().await?;
     let user_id = UserId(user_id.into_inner().0);
 
-    match User::find_by_id(user_id.clone(), &mut transaction).await {
-        Ok(Some(user)) => {
-            info!("Found user: {:?}", user.username);
-            transaction.commit().await?;
-            response!(StatusCode::OK, user, constants::MESSAGE_FIND_USER_SUCCESS)
-        },
-        Ok(None) => {
-            info!("Could not find user");
-            response!(StatusCode::NOT_FOUND, constants::MESSAGE_FIND_USER_FAIL)
-        }
-        Err(e) => {
-            info!("Error finding user: {:?}", e);
-            Err(super::ApiError::NotFound("Could not find user".to_string()))
-        }
-    }
+    let user = User::find_by_id(user_id, &mut transaction).await?
+        .ok_or_else(|| ApiError::NotFound("User not found".to_string()))?;
+
+    response!(StatusCode::OK, user, "Successfully found user")
 }
 
 #[post("/logout")]
@@ -58,77 +50,49 @@ pub async fn logout(
     let mut transaction = pool.begin().await?;
     let user = User::from_request(req, &mut transaction).await?;
 
-    match user.logout(&mut transaction).await {
-        Ok(_) => {
-            info!("Logged out user: {:?}", user.username);
-            transaction.commit().await?;
-            response!(StatusCode::OK, constants::MESSAGE_LOGOUT_SUCCESS)
-        },
-        Err(e) => {
-            info!("Error logging out user: {:?}", e);
-            response!(StatusCode::BAD_REQUEST, constants::MESSAGE_LOGOUT_FAIL)
-        }
-    }
+    user.logout(&mut transaction).await?;
+    transaction.commit().await?;
+
+    response!(StatusCode::OK, constants::MESSAGE_LOGOUT_SUCCESS)
 }
 
 #[post("/login")]
 pub async fn login(
     form: web::Json<Login>,
-    req: HttpRequest, 
     pool: web::Data<SqlPool>
 ) -> Result<HttpResponse, super::ApiError> {
+    let form = form.into_inner();
+
     let mut transaction = pool.begin().await?;
 
-    if User::from_request(req, &mut transaction).await.is_ok() {
-        return response!(StatusCode::UNAUTHORIZED, constants::MESSAGE_ALREADY_LOGGED_IN)
-    }
+    let session = form.login(&mut transaction).await?;
+    transaction.commit().await?;
 
-    match User::login(form.into_inner(), &mut transaction).await {
-        Ok(Some(session)) => {
-            info!("Logged in user: {:?}", session.username);
-            let token = UserToken::generate_token(&session);
-            transaction.commit().await?;
-            response!(StatusCode::OK, token, constants::MESSAGE_LOGIN_SUCCESS)
-        }
-        Ok(None) => {
-            info!("Invalid login attempt");
-            response!(StatusCode::UNAUTHORIZED, constants::MESSAGE_LOGIN_FAIL)
-        }
-        Err(e) => {
-            info!("Error logging in user: {:?}", e);
-            response!(StatusCode::INTERNAL_SERVER_ERROR, constants::MESSAGE_LOGIN_FAIL)
-        }
-    }
+    response!(StatusCode::OK, session, constants::MESSAGE_LOGIN_SUCCESS)
 }
 
 #[post("/register")]
 pub async fn register(
-    form: web::Json<Register>, 
     req: HttpRequest, 
+    form: web::Json<Register>, 
     pool: web::Data<SqlPool>
 ) -> Result<HttpResponse, super::ApiError> {
-    let mut transaction = pool.begin().await?;
-
-    if User::from_request(req, &mut transaction).await.is_ok() {
-        return response!(StatusCode::UNAUTHORIZED, constants::MESSAGE_ALREADY_LOGGED_IN)
-    }
-
     let form = form.into_inner();
 
-    if let Err(e) = form.validate() {
-        info!("Invalid registry: {:?}, error: {:?}", form, e);
-        return response!(StatusCode::BAD_REQUEST, "Invalid sign up form");
-    };
-    
-    match User::register(form, &mut transaction).await {
-        Ok(user) => {
-            info!("Registered new user: {:?}", user.username);
-            transaction.commit().await?;
-            response!(StatusCode::OK, user, constants::MESSAGE_CREATE_USER_SUCCESS)
-        }
-        Err(e) => {
-            info!("Error creating new user: {:?}", e);
-            response!(StatusCode::BAD_REQUEST, constants::MESSAGE_CREATE_USER_FAIL)
-        }
+    let mut transaction = pool.begin().await?;
+
+    form.validate().map_err(|err| 
+        super::ApiError::Validation(validation_errors_to_string(err, None)))?;
+
+    if User::from_request(req, &mut transaction).await.is_ok() {
+        return Err(AuthenticationError::AlreadyLoggedIn.into())
     }
+
+    let user = form.register(&mut transaction).await?;
+    transaction.commit().await?;
+
+    response!(StatusCode::OK, user.id, "Successfully registered user")
 }
+
+
+
