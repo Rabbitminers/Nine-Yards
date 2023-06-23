@@ -236,7 +236,8 @@ impl Project {
             "
             SELECT id, project_id, task_group_id, 
             name, information, creator, due, 
-            primary_colour, accent_colour, created
+            primary_colour, accent_colour, position,
+            created
             FROM tasks
             WHERE project_id = $1
             ",
@@ -254,6 +255,7 @@ impl Project {
                 due: row.due,
                 primary_colour: row.primary_colour,
                 accent_colour: row.accent_colour,
+                position: row.position,
                 created: row.created
             }))
         })
