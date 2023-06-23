@@ -25,4 +25,7 @@ pub enum AuthenticationError {
 
     #[error("You need to be member of this project in order to perform this action")]
     NotMember,
+
+    #[error("You are already logged in")]
+    AlreadyLoggedIn
 }
