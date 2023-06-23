@@ -1,4 +1,6 @@
-use validator::{ValidationErrors, ValidationErrorsKind};
+use chrono::{NaiveDateTime, Local, Utc};
+use regex::Regex;
+use validator::{ValidationErrors, ValidationErrorsKind, ValidationError};
 
 pub fn validation_errors_to_string(errors: ValidationErrors, adder: Option<String>) -> String {
     let mut output = String::new();
@@ -47,24 +49,46 @@ pub fn validation_errors_to_string(errors: ValidationErrors, adder: Option<Strin
     String::new()
 }
 
-pub fn validate_url(value: &str) -> Result<(), validator::ValidationError> {
+pub fn validate_url(value: &str) -> Result<(), ValidationError> {
     let url = url::Url::parse(value)
         .ok()
-        .ok_or_else(|| validator::ValidationError::new("invalid URL"))?;
+        .ok_or_else(|| ValidationError::new("invalid URL"))?;
     
     if url.scheme() != "https" {
-        return Err(validator::ValidationError::new("URL must be https"));
+        return Err(ValidationError::new("URL must be https"));
     }
 
     Ok(())
 }
 
-pub fn validate_name(value: &str) -> Result<(), validator::ValidationError> {
+pub fn validate_name(value: &str) -> Result<(), ValidationError> {
     if value.trim().is_empty() {
-        return Err(validator::ValidationError::new(
+        return Err(ValidationError::new(
             "Name cannot contain only whitespace.",
         ));
     }
 
     Ok(())
+}
+
+pub fn validate_future_date(date: &NaiveDateTime) -> Result<(), ValidationError> {
+    let current_date = Utc::now().naive_utc();
+    
+    if date < &current_date {
+        let error = ValidationError::new("Date is not in the future");
+        Err(error)
+    } else {
+        Ok(())
+    }
+}
+
+pub fn validate_hex_colour(hex_code: &str) -> Result<(), ValidationError> {
+    let hex_regex = Regex::new(r"^#([0-9A-Fa-f]{3}){1,2}$").unwrap();
+
+    if !hex_regex.is_match(hex_code) {
+        let error = ValidationError::new("Invalid hex colour code");
+        Err(error)
+    } else {
+        Ok(())
+    }
 }
