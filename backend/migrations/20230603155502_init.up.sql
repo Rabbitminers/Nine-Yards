@@ -51,12 +51,6 @@ CREATE TABLE IF NOT EXISTS tasks (
     created DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS lables (
-    id TEXT PRIMARY KEY NOT NULL,
-    task_id TEXT REFERENCES tasks NOT NULL,
-    project_member_id TEXT REFERENCES project_members NOT NULL
-);
-
 CREATE TABLE IF NOT EXISTS sub_tasks (
     id TEXT PRIMARY KEY NOT NULL,
     task_id TEXT REFERENCES tasks NOT NULL,
@@ -66,6 +60,12 @@ CREATE TABLE IF NOT EXISTS sub_tasks (
     weight INTEGER,
     position INTEGER NOT NULL,
     completed BOOLEAN NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS lables (
+    id TEXT PRIMARY KEY NOT NULL,
+    task_id TEXT REFERENCES tasks NOT NULL,
+    project_member_id TEXT REFERENCES project_members NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS audit_log (
