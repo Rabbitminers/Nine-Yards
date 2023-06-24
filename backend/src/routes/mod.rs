@@ -1,4 +1,6 @@
-use actix_web::{HttpResponse, body::BoxBody};
+use actix_web::{HttpResponse, body::BoxBody, HttpRequest};
+
+use crate::models::ids::ProjectId;
 
 pub mod user_routes;
 pub mod project_routes;
@@ -9,7 +11,9 @@ pub fn config(cfg: &mut actix_web::web::ServiceConfig) {
     cfg.service(
         actix_web::web::scope("/api")
             .configure(user_routes::config)
-            .configure(project_routes::config) // Mounts task routes as child
+            .configure(project_routes::config)
+            .configure(task_routes::config)
+            .configure(task_group_routes::config)
     );
 }
 
@@ -94,4 +98,8 @@ impl<T> ResponseBody<T> {
             data,
         }
     }
+}
+
+pub fn project_id(req: &HttpRequest) -> Result<ProjectId, ApiError> {
+    ProjectId::from_request(req).ok_or(ApiError::NotFound("Project not found".to_string()))
 }
