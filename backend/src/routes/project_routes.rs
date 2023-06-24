@@ -1,12 +1,14 @@
 use crate::database::SqlPool;
+use crate::middleware::auth::Authenticator;
+use crate::middleware::project::ProjectAuthentication;
 use crate::models::audit::Audit;
 use crate::models::projects::{ProjectBuilder, Project, ProjectMember, Permissions};
+use crate::models::tasks::{Task, TaskGroupBuilder};
 use crate::models::users::User;
-use crate::models::ids::ProjectId;
+use crate::models::ids::{ProjectId, TaskId};
 use crate::utilities::auth_utils::AuthenticationError::{NotMember, MissingPermissions};
 use crate::utilities::validation_utils::validation_errors_to_string;
 use crate::response;
-
 use actix_web::{get, delete};
 use actix_web::{web, HttpResponse, post, http::StatusCode, HttpRequest};
 use log::info;
@@ -17,18 +19,24 @@ pub fn config(cfg: &mut web::ServiceConfig) {
         .service(
     web::scope("/project")
                 .service(web::scope("/create") // Scope to apply middleware
-                    .wrap(crate::middleware::auth::Authenticator)
+                    .wrap(Authenticator)
                     .service(create)
                 )
                 .service(web::scope("/{project_id}")
-                    .wrap(crate::middleware::project::ProjectAuthentication)
+                    .wrap(ProjectAuthentication {
+                        id_key: "project_id".to_string(),
+                        table_name: None
+                    })
                     .service(get)
                     .service(get_members)
-                    .configure(super::task_routes::config)
-                    .configure(super::task_group_routes::config)
+                    .service(web::scope("/task-groups")
+                        .service(create_task_group)
+                        .service(get_task_groups)
+                    )
                 )
         );
 }
+
 
 #[get("/")]
 pub async fn get(
@@ -112,3 +120,53 @@ pub async fn remove(
 
     response!(StatusCode::OK, "Successfully removed project")
 }
+
+// Generic task group routes
+
+#[get("/")]
+pub async fn get_task_groups(
+    path: web::Path<(String,)>,
+    pool: web::Data<SqlPool>
+) -> Result<HttpResponse, super::ApiError> {
+    let project_id = ProjectId(path.0.clone());
+
+    let mut transaction = pool.begin().await?;
+
+    let groups = Project::get_task_groups(project_id, &mut transaction).await?;
+
+    transaction.commit().await?;
+    
+    response!(StatusCode::OK, groups, "Successfully retrieved task groups")
+}
+
+#[post("/create")]
+pub async fn create_task_group(
+    form: web::Json<TaskGroupBuilder>,
+    path: web::Path<(String,)>,
+    req: actix_web::HttpRequest,
+    pool: web::Data<SqlPool>
+) -> Result<HttpResponse, super::ApiError> {
+    let mut transaction = pool.begin().await?;
+    let form = form.into_inner();
+
+    let project_id = ProjectId(path.0.clone());
+
+    let member = ProjectMember::from_request(req, &mut transaction).await?
+        .ok_or_else(|| super::ApiError::Unauthorized(NotMember))?;
+
+    if !member.permissions.contains(Permissions::MANAGE_TASKS) {
+        return Err(super::ApiError::Unauthorized(MissingPermissions));
+    }
+
+    form.validate().map_err(|err| 
+            super::ApiError::Validation(validation_errors_to_string(err, None)))?;
+
+    let task_group = form.create(project_id, &mut transaction).await?;
+
+    Audit::create(&member, format!("Created new task group '{}'", task_group.name), &mut transaction).await?;
+    transaction.commit().await?;
+
+    response!(StatusCode::CREATED, task_group, "Successfully created task group")
+}
+
+// Generic task routes
