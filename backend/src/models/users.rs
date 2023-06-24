@@ -49,10 +49,9 @@ impl User {
         sqlx::query!(
             "
             UPDATE users
-            SET login_session = $1
-            where id = $2
+            SET login_session = NULL
+            where id = $1
             ",
-            "",
             self.id
         )
         .execute(&mut *transaction)
