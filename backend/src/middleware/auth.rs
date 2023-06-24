@@ -65,7 +65,7 @@ where
         let srv = self.service.clone();
 
         async move {
-            if let Some(user) = token_utils::is_valid_token(token, &pool).await {
+            if let Some(user) = token_utils::user_from_token(token, &pool).await {
                 req.extensions_mut().insert(user.id);
             }
             let res = srv.call(req).await?;

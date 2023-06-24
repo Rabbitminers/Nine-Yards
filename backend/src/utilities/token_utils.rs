@@ -2,7 +2,7 @@ use crate::{models::{
     user_token::{
         UserToken, 
         KEY
-    }, users::User
+    }, users::User, ids::ProjectId, projects::ProjectMember
 }, routes::ApiError};
 use jsonwebtoken::{DecodingKey, TokenData, Validation};
 use crate::database::SqlPool;
@@ -30,7 +30,7 @@ pub async fn verify_token(
     }
 }
 
-pub async fn is_valid_token(
+pub async fn user_from_token(
     token: String,
     pool: &SqlPool,
 ) -> Option<User> {
@@ -42,4 +42,18 @@ pub async fn is_valid_token(
     } else {
         None
     }
+}
+
+pub async fn get_project_member(
+    token: String, 
+    project: ProjectId,
+    pool: &SqlPool,
+) -> Result<ProjectMember, ApiError> {
+    let user = user_from_token(token, &pool).await
+        .ok_or(ApiError::Unauthorized(AuthenticationError::Unauthorized))?;
+
+    let member = ProjectMember::get(user.id, project, pool).await?
+        .ok_or(ApiError::Unauthorized(AuthenticationError::NotMember))?;
+
+    Ok(member)
 }
