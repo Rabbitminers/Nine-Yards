@@ -1,3 +1,4 @@
+use crate::models::user_token::UserToken;
 use crate::models::users::{Register, User, Login};
 use crate::models::ids::UserId;
 use crate::response;
@@ -66,9 +67,11 @@ pub async fn login(
     let mut transaction = pool.begin().await?;
 
     let session = form.login(&mut transaction).await?;
+    let token = UserToken::generate_token(&session);
+
     transaction.commit().await?;
 
-    response!(StatusCode::OK, session, constants::MESSAGE_LOGIN_SUCCESS)
+    response!(StatusCode::OK, token, constants::MESSAGE_LOGIN_SUCCESS)
 }
 
 #[post("/register")]
