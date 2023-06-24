@@ -1,13 +1,17 @@
+use core::task;
+
+use crate::middleware::project::ProjectAuthentication;
 use crate::utilities::validation_utils::{validate_future_date, validate_hex_colour, validation_errors_to_string};
 use crate::utilities::auth_utils::AuthenticationError::{NotMember, MissingPermissions};
 use crate::models::ids::{TaskId, ProjectId, TaskGroupId};
-use crate::models::tasks::{Task, TaskBuilder};
+use crate::models::tasks::{Task, TaskBuilder, SubTask, SubTaskBuilder};
 use crate::models::projects::{ProjectMember, Permissions};
 use crate::models::audit::Audit;
-use crate::response;
+use crate::{response,};
 use crate::routes::ApiError;
 
-use actix_web::{web, HttpResponse, get, post, delete};
+use actix_web::dev::{ServiceRequest, Service};
+use actix_web::{web, HttpResponse, get, post, delete, middleware};
 use actix_web::http::StatusCode;
 
 use chrono::NaiveDateTime;
@@ -18,53 +22,26 @@ use crate::database::SqlPool;
 pub fn config(cfg: &mut web::ServiceConfig) {
     cfg
         .service(
-    web::scope("/tasks")
-                .service(
-                    web::scope("/{task_id}")
-                        .service(get)   
-                        .service(create)
-                        .service(edit)
-                        .service(delete)
-                )
-        );
-}
-
-#[post("/create")]
-pub async fn create(
-    path: web::Path<(String,)>,
-    req: actix_web::HttpRequest,
-    pool: web::Data<SqlPool>,
-    form: web::Json<TaskBuilder>,
-) -> Result<HttpResponse, super::ApiError> {
-    let mut transaction = pool.begin().await?;
-    let form = form.into_inner();
-
-    let project_id = ProjectId(path.0.clone());
-
-    let member = ProjectMember::from_request(req, &mut transaction).await?
-        .ok_or_else(|| super::ApiError::Unauthorized(NotMember))?;
-
-    if !member.permissions.contains(Permissions::MANAGE_TASKS) {
-        return Err(super::ApiError::Unauthorized(MissingPermissions));
-    }
-
-    form.validate().map_err(|err| 
-            super::ApiError::Validation(validation_errors_to_string(err, None)))?;
-
-    let task = form.create(project_id, &mut transaction).await?;
-
-    response!(StatusCode::OK, task, "Successfully created task")
+    web::scope("/tasks/{task_id}")
+                .wrap(ProjectAuthentication {
+                    id_key: "task_id".to_string(),
+                    table_name: Some("tasks".to_string()),
+                })
+                .service(get)   
+                .service(edit)
+                .service(delete)
+            );
 }
 
 #[get("/")]
 pub async fn get(
-    path: web::Path<(String, String)>,
-    pool: web::Data<SqlPool>
+    path: web::Path<(String,)>,
+    pool: web::Data<SqlPool>,
+    req: actix_web::HttpRequest,
 ) -> Result<HttpResponse, super::ApiError> {
-    let project_id = ProjectId(path.0.clone());
-    let task_id = TaskId(path.1.clone());
+    let task_id = TaskId(path.0.clone());
 
-    let task = Task::get_full(task_id, project_id, &**pool)
+    let task = Task::get_full(task_id, &**pool)
         .await?
         .ok_or_else(|| ApiError::NotFound("Could not find task".to_string()))?;
 
@@ -88,18 +65,16 @@ pub struct EditTask {
 
 #[post("/edit")]
 pub async fn edit(
-    path: web::Path<(String, String)>,
+    path: web::Path<(String,)>,
     pool: web::Data<SqlPool>,
     req: actix_web::HttpRequest,
     form: web::Json<EditTask>,
 ) -> Result<HttpResponse, super::ApiError> {
     let form = form.into_inner();
 
-    let project_id = ProjectId(path.0.clone());
-    let task_id = TaskId(path.1.clone());
+    let task_id = TaskId(path.0.clone());
 
     let mut transaction = pool.begin().await?;
-
 
     let member = ProjectMember::from_request(req, &mut transaction).await?
         .ok_or_else(|| super::ApiError::Unauthorized(NotMember))?;
@@ -108,10 +83,34 @@ pub async fn edit(
         return Err(super::ApiError::Unauthorized(MissingPermissions));
     }
 
-    let task = Task::get(task_id.clone(), project_id.clone(), &mut transaction).await?
+    let task = Task::get(task_id.clone(), &mut transaction).await?
         .ok_or_else(|| super::ApiError::NotFound("Could not find task to edit".to_string()))?;
 
+    if let Some(position) = form.position {
+        let task_group = form.task_group_id.clone()
+            .unwrap_or(task.task_group_id.clone());
+
+        sqlx::query!(
+            "
+            UPDATE tasks
+            SET position = position + 1
+            WHERE position >= $1
+            AND task_group_id = $2
+            ",
+            position,
+            task_group
+        )
+        .execute(&mut transaction)
+        .await?;
+
+        // Dont create an audit entry for this :)
+    }
+
     if let Some(task_group_id) = form.task_group_id.clone() {
+        if form.position.is_none() {
+            Err(super::ApiError::InvalidInput("Cannot move groups without updating position".to_string()))?;
+        }
+
         sqlx::query!(
             "
             UPDATE tasks
@@ -132,7 +131,7 @@ pub async fn edit(
             WHERE position >= $1
             AND task_group_id = $2
             ",
-            task.position,
+            task.position, // Use old position
             task.task_group_id
         )
         .execute(&mut transaction)
@@ -143,25 +142,6 @@ pub async fn edit(
             format!("Moved task '{}'", task.name),
             &mut transaction
         ).await?;
-    }
-
-    if let Some(position) = form.position {
-        let task_group = form.task_group_id.unwrap_or(task.task_group_id);
-
-        sqlx::query!(
-            "
-            UPDATE tasks
-            SET position = position + 1
-            WHERE position >= $1
-            AND task_group_id = $2
-            ",
-            position,
-            task_group
-        )
-        .execute(&mut transaction)
-        .await?;
-
-        // Dont create an audit entry for this :)
     }
 
     if let Some(name) = form.name {
@@ -260,13 +240,29 @@ pub async fn edit(
     response!(StatusCode::OK, "Successfully edited task")
 }
 
-#[delete("/")]
-pub async fn delete(
+
+#[get("/sub-tasks/")]
+pub async fn get_subtasks(
     path: web::Path<(String, String)>,
     pool: web::Data<SqlPool>,
+) -> Result<HttpResponse, super::ApiError> {
+    let project_id = ProjectId(path.0.clone());
+    let task_id = TaskId(path.1.clone());
+
+    let sub_tasks = Task::get_sub_tasks(task_id, &**pool).await?;
+
+    response!(StatusCode::OK, sub_tasks, "Successfully found subtasks")
+}
+
+#[post("/sub-tasks/create")]
+pub async fn create_subtask(
+    path: web::Path<(String, String)>,
+    pool: web::Data<SqlPool>,
+    form: web::Json<SubTaskBuilder>,
     req: actix_web::HttpRequest,
 ) -> Result<HttpResponse, super::ApiError> {
     let mut transaction = pool.begin().await?;
+    let form = form.into_inner();
 
     let project_id = ProjectId(path.0.clone());
     let task_id = TaskId(path.1.clone());
@@ -278,10 +274,34 @@ pub async fn delete(
         return Err(super::ApiError::Unauthorized(MissingPermissions));
     }
 
-    let task = Task::get(task_id.clone(), project_id.clone(), &mut transaction).await?
+    form.create(project_id, task_id, &mut transaction).await?;
+    transaction.commit().await?;
+
+    response!(StatusCode::OK, "Successfully created subtask")
+}
+
+#[delete("/")]
+pub async fn delete(
+    path: web::Path<(String,)>,
+    pool: web::Data<SqlPool>,
+    req: actix_web::HttpRequest,
+) -> Result<HttpResponse, super::ApiError> {
+    let mut transaction = pool.begin().await?;
+    let task_id = TaskId(path.0.clone());
+
+    let member = ProjectMember::from_request(req, &mut transaction).await?
+        .ok_or_else(|| super::ApiError::Unauthorized(NotMember))?;
+
+    if !member.permissions.contains(Permissions::MANAGE_TASKS) {
+        return Err(super::ApiError::Unauthorized(MissingPermissions));
+    }
+
+    let task = Task::get(task_id.clone(), &mut transaction).await?
         .ok_or_else(|| super::ApiError::NotFound("Could not find task to edit".to_string()))?;
 
     task.delete(&mut transaction).await?;
+    Audit::create(&member, format!("Deleted task '{}'", task.name), &mut transaction);
+
     transaction.commit().await?;
 
     response!(StatusCode::OK, "Successfully deleted task")
