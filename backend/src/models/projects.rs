@@ -331,6 +331,12 @@ impl Project {
     }
 }
 
+impl ProjectId {
+    pub fn from_request(req: &actix_web::HttpRequest) -> Option<Self> {
+        req.extensions().get::<ProjectId>().cloned()
+    }
+}
+
 bitflags::bitflags! {
     #[derive(Serialize, Deserialize)]
     #[serde(transparent)]
@@ -464,7 +470,7 @@ impl ProjectMember {
         Ok(None)
     }
 
-    pub async fn from_user_for_project<'a, E> (
+    pub async fn get<'a, E> (
         user: UserId,
         project: ProjectId,
         transaction: E,
