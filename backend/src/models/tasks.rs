@@ -61,22 +61,22 @@ impl TaskGroupBuilder {
 }
 
 impl TaskGroup {
-    pub async fn get(
+    pub async fn get<'a, E>(
         task_group_id: TaskGroupId,
-        project_id: ProjectId,
-        transaction: &mut sqlx::Transaction<'_, Database>,
-    ) -> Result<Option<Self>, sqlx::error::Error> {
+        transaction: E
+    ) -> Result<Option<Self>, sqlx::error::Error>
+    where
+        E: sqlx::Executor<'a, Database = Database>
+    {
         let result = sqlx::query!(
             "
             SELECT id, project_id, name, position
             FROM task_groups
             WHERE id = $1
-            AND project_id = $2
             ",
-            task_group_id, 
-            project_id // Prevent unauthorized reads
+            task_group_id, // Prevent unauthorized reads
         )
-        .fetch_optional(&mut *transaction)
+        .fetch_optional(transaction)
         .await?;
         
         if let Some(row) = result {
@@ -207,7 +207,6 @@ impl TaskGroup {
     }
 
     pub async fn get_tasks_full(
-        project_id: ProjectId,
         group_id: TaskGroupId,
         conn: &SqlitePool
     ) -> Result<Vec<TaskResponse>, sqlx::error::Error> {
@@ -219,10 +218,8 @@ impl TaskGroup {
             created
             FROM tasks
             WHERE task_group_id = $1
-            AND project_id = $2
             ",
             group_id,
-            project_id
         )
         .fetch_many(conn)
         .try_filter_map(|e| async {
@@ -286,7 +283,6 @@ impl TaskGroup {
     }
 
     pub async fn remove(
-        project_id: ProjectId,
         id: TaskGroupId,
         transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<(), sqlx::error::Error> {
@@ -294,10 +290,8 @@ impl TaskGroup {
             "
             DELETE FROM tasks
             WHERE task_group_id = $1
-            AND project_id = $2
             ",
             id,
-            project_id
         )
         .execute(&mut *transaction)
         .await?;
@@ -306,10 +300,8 @@ impl TaskGroup {
             "
             DELETE FROM task_groups
             WHERE id = $1
-            AND project_id = $2
             ",
-            id,
-            project_id
+            id
         )
         .execute(&mut *transaction)
         .await?;
@@ -443,11 +435,13 @@ impl Task {
         Ok(())
     }
 
-    pub async fn get(
+    pub async fn get<'a, E>(
         task_id: TaskId,
-        project_id: ProjectId,
-        transaction: &mut sqlx::Transaction<'_, Database>,
-    ) -> Result<Option<Self>, sqlx::error::Error> {
+        transaction: E,
+    ) -> Result<Option<Self>, sqlx::error::Error>
+    where
+        E: sqlx::Executor<'a, Database = Database>,
+    {
         let query = sqlx::query!(
             "
             SELECT id, project_id, task_group_id, 
@@ -456,12 +450,10 @@ impl Task {
             created
             FROM tasks
             WHERE id = $1
-            AND project_id = $2
             ",
             task_id,
-            project_id
         )
-        .fetch_optional(&mut *transaction)
+        .fetch_optional(transaction)
         .await?;
         
         if let Some(row) = query {
@@ -485,7 +477,6 @@ impl Task {
 
     pub async fn get_full<'a, E>(
         task_id: TaskId,
-        project_id: ProjectId,
         transaction: E,
     ) -> Result<Option<TaskResponse>, sqlx::error::Error>
     where
@@ -499,10 +490,8 @@ impl Task {
             created
             FROM tasks
             WHERE id = $1
-            AND project_id = $2
             ",
             task_id,
-            project_id
         )
         .fetch_optional(transaction)
         .await?;
@@ -635,7 +624,7 @@ impl SubTaskBuilder {
 
         let position = sqlx::query!(
             "
-            SELECT COALESCE(MAX(position), 0) + 1 
+            SELECT COALESCE(MAX(position), 0) + 1
             AS next_available_position
             FROM sub_tasks
             WHERE task_id = $1
@@ -691,10 +680,13 @@ impl SubTask {
         Ok(())
     }
 
-    pub async fn get(
+    pub async fn get<'a, E>(
         id: SubTaskId,
-        transaction: &mut sqlx::Transaction<'_, Database>,
-    ) -> Result<Option<Self>, sqlx::error::Error> {
+        transaction: E,
+    ) -> Result<Option<Self>, sqlx::error::Error> 
+    where
+        E: sqlx::Executor<'a, Database = Database>,
+    {
         let query = sqlx::query!(
             "
             SELECT id, task_id, project_id,
@@ -705,7 +697,7 @@ impl SubTask {
             ",
             id
         )
-        .fetch_optional(&mut *transaction)
+        .fetch_optional(transaction)
         .await?;
 
         if let Some(row) = query {
