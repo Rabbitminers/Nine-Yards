@@ -6,14 +6,16 @@ pub mod user_routes;
 pub mod project_routes;
 pub mod task_routes;
 pub mod task_group_routes;
+pub mod sub_task_routes;
 
 pub fn config(cfg: &mut actix_web::web::ServiceConfig) {
     cfg.service(
         actix_web::web::scope("/api")
             .configure(user_routes::config)
             .configure(project_routes::config)
-            .configure(task_routes::config)
             .configure(task_group_routes::config)
+            .configure(task_routes::config)
+            .configure(sub_task_routes::config)
     );
 }
 
