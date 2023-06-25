@@ -1,17 +1,14 @@
-use core::task;
-
 use crate::middleware::project::ProjectAuthentication;
 use crate::utilities::validation_utils::{validate_future_date, validate_hex_colour, validation_errors_to_string};
 use crate::utilities::auth_utils::AuthenticationError::{NotMember, MissingPermissions};
 use crate::models::ids::{TaskId, ProjectId, TaskGroupId};
-use crate::models::tasks::{Task, TaskBuilder, SubTask, SubTaskBuilder};
+use crate::models::tasks::{Task, SubTaskBuilder};
 use crate::models::projects::{ProjectMember, Permissions};
 use crate::models::audit::Audit;
-use crate::{response,};
+use crate::response;
 use crate::routes::ApiError;
 
-use actix_web::dev::{ServiceRequest, Service};
-use actix_web::{web, HttpResponse, get, post, delete, middleware};
+use actix_web::{web, HttpResponse, get, post, delete};
 use actix_web::http::StatusCode;
 
 use chrono::NaiveDateTime;
@@ -30,6 +27,10 @@ pub fn config(cfg: &mut web::ServiceConfig) {
                 .service(get)   
                 .service(edit)
                 .service(delete)
+                .service(
+            web::scope("/sub-tasks")
+                        .service(get_sub_tasks)
+                    )
             );
 }
 
@@ -37,7 +38,6 @@ pub fn config(cfg: &mut web::ServiceConfig) {
 pub async fn get(
     path: web::Path<(String,)>,
     pool: web::Data<SqlPool>,
-    req: actix_web::HttpRequest,
 ) -> Result<HttpResponse, super::ApiError> {
     let task_id = TaskId(path.0.clone());
 
@@ -297,12 +297,52 @@ pub async fn delete(
     }
 
     let task = Task::get(task_id.clone(), &mut transaction).await?
-        .ok_or_else(|| super::ApiError::NotFound("Could not find task to edit".to_string()))?;
+        .ok_or_else(|| super::ApiError::NotFound("Could not find task to remove".to_string()))?;
 
-    task.delete(&mut transaction).await?;
-    Audit::create(&member, format!("Deleted task '{}'", task.name), &mut transaction);
+    task.remove(&mut transaction).await?;
+    Audit::create(&member, format!("Deleted task '{}'", task.name), &mut transaction).await?;
 
     transaction.commit().await?;
 
     response!(StatusCode::OK, "Successfully deleted task")
+}
+
+// Generic sub task routes
+
+#[get("/")]
+pub async fn get_sub_tasks(
+    path: web::Path<(String,)>,
+    pool: web::Data<SqlPool>,
+) -> Result<HttpResponse, super::ApiError> {
+    let task_id = TaskId(path.0.clone());
+    let sub_tasks = Task::get_sub_tasks(task_id, &**pool).await?;
+    response!(StatusCode::OK, sub_tasks, "Successfully retrieved sub-tasks")
+}
+
+#[post("/")]
+pub async fn add_sub_task(
+    path: web::Path<(String,)>,
+    req: actix_web::HttpRequest,
+    pool: web::Data<SqlPool>,
+    form: web::Json<SubTaskBuilder>,
+) -> Result<HttpResponse, super::ApiError> {
+    let mut transaction = pool.begin().await?;
+    let form = form.into_inner();
+
+    let project_id = super::project_id(&req)?;
+    let task_id = TaskId(path.0.clone());
+
+    let member = ProjectMember::from_request(req, &mut transaction).await?
+        .ok_or_else(|| super::ApiError::Unauthorized(NotMember))?;
+
+    if !member.permissions.contains(Permissions::MANAGE_TASKS) {
+        return Err(super::ApiError::Unauthorized(MissingPermissions));
+    }
+
+    form.validate().map_err(|err| 
+            super::ApiError::Validation(validation_errors_to_string(err, None)))?;
+
+    let task = form.create(project_id, task_id, &mut transaction).await?;
+    
+    response!(StatusCode::OK, task, "Successfully created task")
 }

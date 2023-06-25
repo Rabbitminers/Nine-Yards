@@ -52,7 +52,7 @@ pub async fn get_project_member(
     let user = user_from_token(token, &pool).await
         .ok_or(ApiError::Unauthorized(AuthenticationError::Unauthorized))?;
 
-    let member = ProjectMember::get(user.id, project, pool).await?
+    let member = ProjectMember::from_user_for_project(user.id, project, pool).await?
         .ok_or(ApiError::Unauthorized(AuthenticationError::NotMember))?;
 
     Ok(member)
