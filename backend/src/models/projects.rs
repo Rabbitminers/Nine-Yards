@@ -252,10 +252,13 @@ impl Project {
         Ok(task_groups)
     }   
 
-    pub async fn get_tasks(
-        &self,
-        transaction: &mut sqlx::Transaction<'_, Database>,
-    ) -> Result<Vec<Task>, sqlx::error::Error> {
+    pub async fn get_tasks<'a, E>(
+        id: ProjectId,
+        exec: E
+    ) -> Result<Vec<Task>, sqlx::error::Error> 
+    where
+        E: sqlx::Executor<'a, Database = Database>,
+    {
         let tasks = sqlx::query!(
             "
             SELECT id, project_id, task_group_id, 
@@ -265,9 +268,9 @@ impl Project {
             FROM tasks
             WHERE project_id = $1
             ",
-            self.id
+            id
         )
-        .fetch_many(&mut *transaction)
+        .fetch_many(exec)
         .try_filter_map(|result| async {
             Ok(result.right().map(|row| Task {
                 id: TaskId(row.id),
@@ -471,8 +474,7 @@ impl ProjectMember {
     }
 
     pub async fn get<'a, E> (
-        user: UserId,
-        project: ProjectId,
+        member: ProjectMemberId,
         transaction: E,
     ) -> Result<Option<Self>, sqlx::error::Error>
     where
@@ -484,11 +486,9 @@ impl ProjectMember {
                 user_id, permissions, 
                 accepted
             FROM project_members
-            WHERE user_id = $1
-            AND project_id = $2
+            WHERE project_id = $1
             ",
-            user.0,
-            project.0
+            member,
         )
         .fetch_optional(transaction)
         .await?;
@@ -534,6 +534,42 @@ impl ProjectMember {
         .await?;
 
         Ok(query)
+    }
+
+    pub async fn from_user_for_project<'a, E>(
+        user: UserId,
+        project: ProjectId,
+        transaction: E,
+    ) -> Result<Option<Self>, sqlx::error::Error>
+    where
+        E: sqlx::Executor<'a, Database = Database>,
+    {
+        let query = sqlx::query!(
+            "
+            SELECT id, project_id,
+                user_id, permissions, 
+                accepted
+            FROM project_members
+            WHERE user_id = $1
+            AND project_id = $2
+            ",
+            user,
+            project
+        )
+        .fetch_optional(transaction)
+        .await?;
+
+        if let Some(row) = query {
+            Ok(Some(Self {
+                id: ProjectMemberId(row.id),
+                project_id: ProjectId(row.project_id),
+                user_id: UserId(row.user_id),
+                permissions: Permissions::from_bits(row.permissions as u64).unwrap_or_default(),
+                accepted: row.accepted,
+            }))
+        } else {
+            Ok(None)
+        }
     }
 
     pub async fn insert(

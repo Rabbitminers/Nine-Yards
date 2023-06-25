@@ -206,10 +206,13 @@ impl TaskGroup {
         Ok(tasks)
     }
 
-    pub async fn get_tasks_full(
+    pub async fn get_tasks_full<'a, E>(
         group_id: TaskGroupId,
-        conn: &SqlitePool
-    ) -> Result<Vec<TaskResponse>, sqlx::error::Error> {
+        exec: E,
+    ) -> Result<Vec<TaskResponse>, sqlx::error::Error>
+    where
+        E: sqlx::Executor<'a, Database = Database> + Copy,
+    {
         let query = sqlx::query!(
             "
             SELECT id, project_id, task_group_id, 
@@ -221,15 +224,11 @@ impl TaskGroup {
             ",
             group_id,
         )
-        .fetch_many(conn)
+        .fetch_many(exec)
         .try_filter_map(|e| async {
             if let Some(m) = e.right() {
-                let mut transaction = conn.begin().await?;
-
                 let id = TaskId(m.id);
-                let sub_tasks = Task::get_sub_tasks(id.clone(), &mut transaction).await?;
-
-                transaction.commit().await?;
+                let sub_tasks = Task::get_sub_tasks(id.clone(), exec).await?;
 
                 Ok(Some(Ok(TaskResponse {
                     id,
@@ -328,7 +327,6 @@ pub struct Task {
 
 #[derive(Serialize, Deserialize, Validate)]
 pub struct TaskBuilder {
-    pub task_group_id: TaskGroupId,
     #[validate(length(min = 3, max = 30))]
     pub name: String,
     pub creator: UserId,
@@ -356,10 +354,11 @@ impl TaskBuilder {
     pub async fn create(
         self,
         project_id: ProjectId,
+        task_group_id: TaskGroupId,
         transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<Task, super::DatabaseError> {
         if TaskGroup::is_in_project(
-            self.task_group_id.clone(), 
+            task_group_id.clone(), 
             project_id.clone(), 
             &mut *transaction
         ).await? {
@@ -375,7 +374,7 @@ impl TaskBuilder {
             FROM tasks
             WHERE task_group_id = $1
             ",
-            self.task_group_id
+            task_group_id
         )
         .fetch_one(&mut *transaction)
         .await?
@@ -385,7 +384,7 @@ impl TaskBuilder {
         let task = Task {
             id,
             project_id,
-            task_group_id: self.task_group_id,
+            task_group_id,
             name: self.name,
             information: None,
             creator: self.creator,
@@ -554,7 +553,7 @@ impl Task {
         Ok(sub_tasks)
     }
 
-    pub async fn delete(
+    pub async fn remove(
         &self,
         transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<(), sqlx::error::Error> {
@@ -608,8 +607,9 @@ pub struct SubTask {
     pub completed: bool
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Validate)]
 pub struct SubTaskBuilder {
+    #[validate(length(min = 3, max = 90))]
     pub body: String,
 }
 
@@ -757,7 +757,7 @@ impl SubTask {
     }
 
     pub async fn remove(
-        id: SubTaskId,
+        &self,
         transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<(), sqlx::error::Error> {
         sqlx::query!(
@@ -765,7 +765,18 @@ impl SubTask {
             DELETE FROM sub_tasks
             WHERE id = $1
             ",
-            id
+            self.id
+        )
+        .execute(&mut *transaction)
+        .await?;
+
+        sqlx::query!(
+            "
+            UPDATE sub_tasks
+            SET position = position - 1
+            WHERE position >= $1
+            ",
+            self.position
         )
         .execute(&mut *transaction)
         .await?;
