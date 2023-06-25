@@ -130,11 +130,7 @@ pub async fn get_task_groups(
 ) -> Result<HttpResponse, super::ApiError> {
     let project_id = ProjectId(path.0.clone());
 
-    let mut transaction = pool.begin().await?;
-
-    let groups = Project::get_task_groups(project_id, &mut transaction).await?;
-
-    transaction.commit().await?;
+    let groups = Project::get_task_groups(project_id, &**pool).await?;
     
     response!(StatusCode::OK, groups, "Successfully retrieved task groups")
 }
@@ -170,3 +166,15 @@ pub async fn create_task_group(
 }
 
 // Generic task routes
+
+#[get("/")]
+pub async fn get_tasks(
+    path: web::Path<(String,)>,
+    pool: web::Data<SqlPool>
+) -> Result<HttpResponse, super::ApiError> {
+    let project_id = ProjectId(path.0.clone());
+
+    let groups = Project::get_tasks(project_id, &**pool).await?;
+
+    response!(StatusCode::OK, groups, "Successfully retrieved task groups")
+}

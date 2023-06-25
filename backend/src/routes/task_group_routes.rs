@@ -2,7 +2,7 @@ use actix_web::{web, HttpResponse, get, http::StatusCode, post, delete, dev::Ser
 use log::info;
 use validator::Validate;
 
-use crate::{database::SqlPool, models::{ids::{TaskGroupId, ProjectId}, tasks::{TaskGroup, TaskGroupBuilder, Task, TaskBuilder}, projects::{Project, ProjectMember, Permissions}, audit::Audit}, response, utilities::{validation_utils::validation_errors_to_string, auth_utils::AuthenticationError::{NotMember, Unauthorized, MissingPermissions}}, middleware::project::ProjectAuthentication};
+use crate::{database::SqlPool, models::{ids::{TaskGroupId}, tasks::{TaskGroup, TaskBuilder}, projects::{ProjectMember, Permissions}, audit::Audit}, response, utilities::{validation_utils::validation_errors_to_string, auth_utils::AuthenticationError::{NotMember, MissingPermissions}}, middleware::project::ProjectAuthentication};
 
 pub fn config(cfg: &mut web::ServiceConfig) {
     cfg
@@ -168,7 +168,7 @@ pub async fn remove(
 
 // Generic Task routes
 
-#[post("/create")]
+#[post("/")]
 pub async fn create_task(
     path: web::Path<(String,)>,
     req: actix_web::HttpRequest,
@@ -179,6 +179,7 @@ pub async fn create_task(
     let form = form.into_inner();
 
     let project_id = super::project_id(&req)?;
+    let task_group_id = TaskGroupId(path.0.clone());
 
     let member = ProjectMember::from_request(req, &mut transaction).await?
         .ok_or_else(|| super::ApiError::Unauthorized(NotMember))?;
@@ -189,7 +190,8 @@ pub async fn create_task(
 
     form.validate().map_err(|err| 
             super::ApiError::Validation(validation_errors_to_string(err, None)))?;
-    let task = form.create(project_id, &mut transaction).await?;
+    let task = form.create(project_id, task_group_id, &mut transaction).await?;
+    
 
     response!(StatusCode::OK, task, "Successfully created task")
 }
@@ -200,6 +202,6 @@ pub async fn get_tasks(
     pool: web::Data<SqlPool>,
 ) -> Result<HttpResponse, super::ApiError> {
     let group_id = TaskGroupId(path.0.clone());
-    let tasks = TaskGroup::get_tasks_full(group_id, &pool).await?;
+    let tasks = TaskGroup::get_tasks_full(group_id, &**pool).await?;
     response!(StatusCode::OK, tasks, "Successfully retrieved tasks")
 }
