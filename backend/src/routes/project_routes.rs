@@ -3,9 +3,9 @@ use crate::middleware::auth::Authenticator;
 use crate::middleware::project::ProjectAuthentication;
 use crate::models::audit::Audit;
 use crate::models::projects::{ProjectBuilder, Project, ProjectMember, Permissions};
-use crate::models::tasks::{Task, TaskGroupBuilder};
+use crate::models::tasks::TaskGroupBuilder;
 use crate::models::users::User;
-use crate::models::ids::{ProjectId, TaskId};
+use crate::models::ids::ProjectId;
 use crate::utilities::auth_utils::AuthenticationError::{NotMember, MissingPermissions};
 use crate::utilities::validation_utils::validation_errors_to_string;
 use crate::response;
@@ -135,7 +135,7 @@ pub async fn get_task_groups(
     response!(StatusCode::OK, groups, "Successfully retrieved task groups")
 }
 
-#[post("/create")]
+#[post("/")]
 pub async fn create_task_group(
     form: web::Json<TaskGroupBuilder>,
     path: web::Path<(String,)>,
