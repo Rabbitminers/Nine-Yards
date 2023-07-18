@@ -1,10 +1,9 @@
 use chrono::{NaiveDateTime, Local};
-use sqlx::SqlitePool;
 
 use crate::database::Database;
 use futures::{TryStreamExt};
 
-use super::ids::{TaskId, ProjectId, TaskGroupId, UserId, SubTaskId, ProjectMemberId};
+use super::ids::{TaskId, ProjectId, TaskGroupId, UserId, SubTaskId, ProjectMemberId, TaskLabelId};
 use super::DatabaseError;
 
 #[derive(Serialize, Deserialize)]
@@ -779,6 +778,73 @@ impl SubTask {
             self.position
         )
         .execute(&mut *transaction)
+        .await?;
+
+        Ok(())
+    }
+}
+
+#[derive(Serialize)]
+pub struct TaskLabel {
+    id: TaskLabelId,
+    task_id: TaskId,
+    project_id: ProjectId,
+    body: String,
+    colour: String
+}
+
+#[derive(Deserialize)]
+pub struct TaskLabelBuilder {
+    body: String,
+    colour: String
+}
+
+impl TaskLabelBuilder {
+    pub async fn create(
+        self,
+        task_id: TaskId, // Validate these two match at route level
+        project_id: ProjectId,
+        transaction: &mut sqlx::Transaction<'_, Database>,
+    ) -> Result<TaskLabel, super::DatabaseError> {
+        let id = TaskLabelId::generate(&mut *transaction).await?;
+
+        let label = TaskLabel {
+            id,
+            task_id,
+            project_id,
+            body: self.body,
+            colour: self.colour,
+        };
+        
+        label.insert(&mut *transaction).await?;
+        
+        Ok(label)
+    }
+}
+
+impl TaskLabel {
+    pub async fn insert(
+        &self,
+        transaction: &mut sqlx::Transaction<'_, Database>,
+    ) -> Result<(), sqlx::error::Error> {
+        
+        sqlx::query!(
+            "
+            INSERT INTO labels (
+                id, task_id, project_id,
+                body, colour
+            )
+            VALUES (
+                $1, $2, $3, $4, $5
+            )
+            ",
+            self.id,
+            self.task_id,
+            self.project_id,
+            self.body,
+            self.colour
+        )
+        .execute(transaction)
         .await?;
 
         Ok(())

@@ -157,6 +157,14 @@ id_type!(
     "SELECT COUNT(*) as count FROM notifications WHERE id = ?"
 );
 
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[sqlx(transparent)]
+pub struct TaskLabelId(pub String);
 
-
+id_type!(
+    pub,
+    TaskLabelId,
+    12,
+    "SELECT COUNT(*) as count FROM notifications WHERE id = ?"
+);
 
