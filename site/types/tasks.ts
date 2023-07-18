@@ -22,7 +22,7 @@ export interface Task {
 export interface SubTask {
     id: String,
     task_id: String,
-    assignee: String,
-    body: String,
+    assignee?: String,
+    body?: String,
     completed: Boolean
 }
