@@ -62,10 +62,12 @@ CREATE TABLE IF NOT EXISTS sub_tasks (
     completed BOOLEAN NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS lables (
+CREATE TABLE IF NOT EXISTS labels (
     id TEXT PRIMARY KEY NOT NULL,
     task_id TEXT REFERENCES tasks NOT NULL,
-    project_member_id TEXT REFERENCES project_members NOT NULL
+    project_id TEXT REFERENCES projects NOT NULL,
+    body TEXT NOT NULL,
+    colour TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS audit_log (

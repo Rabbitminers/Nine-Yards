@@ -359,7 +359,7 @@ impl Default for Permissions {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize)]
 pub struct ProjectMember {
     pub id: ProjectMemberId,
     pub project_id: ProjectId,
@@ -369,7 +369,7 @@ pub struct ProjectMember {
 }
 
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 pub struct ProjectInvitation {
     pub user: UserId,
     pub project: ProjectId,
