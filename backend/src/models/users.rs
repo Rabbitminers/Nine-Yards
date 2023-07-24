@@ -1,47 +1,151 @@
-use actix_web::{HttpRequest, HttpMessage};
-use bcrypt::{DEFAULT_COST, hash, verify};
-use uuid::Uuid;
-use validator::Validate;
-use crate::{models::login_history::LoginHistory, utilities::auth_utils::AuthenticationError, routes::ApiError, database::{Database, SqlPool}, response};
+use bcrypt::DEFAULT_COST;
+use serde_derive::{Serialize, Deserialize};
+use jsonwebtoken::{Header, EncodingKey};
+use sqlx::FromRow;
+use chrono::{Utc, NaiveDateTime};
 
-use super::{ids::{UserId, ProjectId}, user_token::UserToken};
+use crate::error::{self, AuthenticationError};
+use crate::database::Database;
 
-pub const DELETED_USER: &str ="03082007";
+use super::id::{UserId, LoginSessionId, LoginHistoryEntryId};
 
-#[derive(Serialize, Deserialize)]
+pub static KEY: [u8; 16] = *include_bytes!("../secret.key");
+static ONE_WEEK: i64 = 60 * 60 * 24 * 7; // in seconds
+
+pub const DELETED_USER: &str = "03082007";
+
+#[derive(Serialize, Deserialize, FromRow, sqlx::Decode)]
 pub struct User {
+    // The user's unqiue id
     pub id: UserId,
+    // The user's unique username (3 -> 30 chars)
     pub username: String,
+    // The user's hashed password
     #[serde(skip_serializing)]
     pub password: String,
+    // The user's email address
     pub email: String,
+    // The user's current login session id
     #[serde(skip_serializing)]
     pub login_session: Option<String>
 }
 
 #[derive(Serialize, Deserialize, Debug, Validate)]
 pub struct Register {
+    // The user's username
     #[validate(length(min = 3, max = 30))]
     pub username: String,
+    // The user's password
     pub password: String,
+    // The user's email address
     #[validate(email)]
     pub email: String
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct Login {
+    // Either a username or email for validation
     pub username_or_email: String,
+    // The user's password to validated
     pub password: String
 }
 
-
-#[derive(Serialize, Deserialize)]
-pub struct LoginSession {
-    pub user_id: UserId,
-    pub login_session: String,
-}
-
 impl User {
+    /// Registers a new user with the provided registration form and inserts it into the database.
+    ///
+    /// # Arguments
+    ///
+    /// * `form`: A `Register` struct containing the registration form data, including `username`, `password`, and `email`.
+    /// * `transaction`: A mutable reference to a `sqlx::Transaction`, representing a database transaction.
+    ///
+    /// # Returns
+    ///
+    /// This method returns `Result<Self, super::DatabaseError>`, where:
+    /// - `Ok(user)` is returned with the newly registered `User` instance if the registration is successful.
+    /// - An `Err(super::DatabaseError::AlreadyExists)` is returned if a user with the same `username` already exists in the database.
+    /// - An `Err(super::DatabaseError)` is returned if there is an error executing the database queries or generating the user ID.
+    ///
+    pub async fn register(
+        form: Register,
+        transaction: &mut sqlx::Transaction<'_, Database>,
+    ) -> Result<Self, error::ApiError> {
+        if User::get_by_username(form.username.clone(), &mut **transaction).await?.is_some() {
+            return Err(super::DatabaseError::AlreadyExists.into());
+        }
+        
+        let password = bcrypt::hash(form.password, DEFAULT_COST).unwrap();
+        let id = UserId::generate(&mut *transaction).await?;
+
+        let user: User = User {
+            id,
+            username: form.username,
+            password,
+            email: form.email,
+            login_session: None
+        };
+
+        user.insert(&mut *transaction).await?;
+
+        Ok(user)
+    }
+
+    /// Attempts to log in a user with the provided login form and returns an authentication token on success.
+    ///
+    /// # Arguments
+    ///
+    /// * `form`: A `Login` struct containing the login form data, including `username_or_email` and `password`.
+    /// * `transaction`: A mutable reference to a `sqlx::Transaction`, representing a database transaction.
+    ///
+    /// # Returns
+    ///
+    /// This method returns `Result<Token, error::ApiError>`, where:
+    /// - `Ok(token)` is returned with an authentication `Token` if the login is successful.
+    /// - An `error::ApiError` is returned if there is an error executing the database queries or if the login credentials are invalid.
+    ///
+    pub async fn login(
+        form: Login,
+        transaction: &mut sqlx::Transaction<'_, Database>,
+    ) -> Result<Token, error::ApiError> {
+        let user = sqlx::query_as!(
+            User,
+            "
+            SELECT id, username, password, 
+            email, login_session
+            FROM users
+            WHERE username = $1
+            OR email = $1
+            ",
+            form.username_or_email,
+        )
+        .fetch_optional(&mut **transaction)
+        .await?
+        .ok_or(super::DatabaseError::NotFound("User".to_string()))?;
+
+        if user.login_session.is_some() {
+            return Err(AuthenticationError::AlreadyLoggedIn.into());
+        }
+
+        if !bcrypt::verify(&form.password, &user.password).unwrap() {
+            return Err(AuthenticationError::InvalidCredentials.into());
+        }   
+
+        let entry = LoginHistoryEntry::create(&user, transaction).await?;
+
+        entry.generate_token(&mut *transaction).await
+    }
+
+    /// Logs out the user by setting the `login_session` to `None` in the database.
+    ///
+    /// # Arguments
+    ///
+    /// * `transaction`: A mutable reference to a `sqlx::Transaction`, representing a database transaction.
+    ///
+    /// # Returns
+    ///
+    /// This method returns `Result<(), sqlx::error::Error>`, where:
+    /// - `Ok(())` is returned if the logout is successful.
+    /// - An `sqlx::error::Error` is returned if there is an error executing the update query.
+    ///
     pub async fn logout(
         &self,
         transaction: &mut sqlx::Transaction<'_, Database>,
@@ -54,12 +158,26 @@ impl User {
             ",
             self.id
         )
-        .execute(&mut *transaction)
+        .execute(&mut **transaction)
         .await?;
 
         Ok(())
     }
+}
 
+impl User {
+    /// Inserts the current `User` instance into the database using the given transaction.
+    ///
+    /// # Arguments
+    ///
+    /// * `transaction`: A mutable reference to a `sqlx::Transaction`, representing a database transaction.
+    ///
+    /// # Returns
+    ///
+    /// This method returns `Result<(), sqlx::error::Error>`, where:
+    /// - `Ok(())` is returned if the insertion is successful.
+    /// - An `sqlx::error::Error` is returned if there is an error executing the insertion query.
+    /// 
     pub async fn insert(
         &self,
         transaction: &mut sqlx::Transaction<'_, Database>,
@@ -67,8 +185,8 @@ impl User {
         sqlx::query!(
             "
             INSERT INTO users (
-                id, username, password, email, 
-                login_session
+                id, username, password,
+                email, login_session
             )
             VALUES (
                 $1, $2, $3, $4, $5
@@ -80,16 +198,135 @@ impl User {
             self.email,
             self.login_session
         )
-        .execute(&mut *transaction)
+        .execute(&mut **transaction)
         .await?;
 
         Ok(())
     }
 
-    pub async fn remove(
-        &self,
-        transaction: &mut sqlx::Transaction<'_, Database>,
-    ) -> Result<(), sqlx::error::Error> {
+    /// Retrieves a user record from the database based on the provided `id`.
+    ///
+    /// # Arguments
+    ///
+    /// * `id`: A `UserId` representing the unique identifier of the user to retrieve.
+    /// * `executor`: An implementation of `sqlx::Executor` representing the database executor.
+    ///
+    /// # Returns
+    ///
+    /// This method returns `Result<Option<Self>, sqlx::error::Error>`, where:
+    /// - `Ok(Some(user))` is returned if a user with the provided `id` is found in the database.
+    /// - `Ok(None)` is returned if no user with the provided `id` is found in the database.
+    /// - An `sqlx::error::Error` is returned if there is an error executing the retrieval query.
+    ///
+    pub async fn get<'a, E>(
+        id: UserId,
+        executor: E
+    ) -> Result<Option<Self>, sqlx::error::Error> 
+    where
+        E: sqlx::Executor<'a, Database = Database>,
+    {
+        let result = sqlx::query_as!(
+            User,
+            "
+            SELECT id, username, password, 
+                   email, login_session
+            FROM users
+            WHERE id = $1
+            ",
+            id
+        )
+        .fetch_optional(executor)
+        .await?;
+
+        Ok(result)
+    }
+
+    /// Retrieves a list of user records from the database that match the given column and value.
+    ///
+    /// # Arguments
+    ///
+    /// * `column`: A `String` representing the column name to use in the WHERE clause of the query.
+    /// * `value`: A `String` representing the value to match in the specified column.
+    /// * `executor`: An implementation of `sqlx::Executor` representing the database executor.
+    ///
+    /// # Returns
+    ///
+    /// This method returns `Result<Vec<Self>, sqlx::error::Error>`, where:
+    /// - `Ok(vec)` is returned with a vector containing `User` instances that match the criteria.
+    /// - An empty vector is returned if no records match the given column and value.
+    /// - An `sqlx::error::Error` is returned if there is an error executing the retrieval query.
+    ///
+    pub async fn get_many<'a, E>(
+        column: &str,
+        value: String,
+        executor: E,
+    ) -> Result<Vec<Self>, sqlx::error::Error>
+    where 
+        E: sqlx::Executor<'a, Database = Database>,
+    {
+        let results = sqlx::query_as!(
+            User,
+            "
+            SELECT id, username, password,
+                   email, login_session
+            FROM users
+            WHERE $1 = $2
+            ",
+            column,
+            value
+        )
+        .fetch_all(executor)
+        .await?;
+
+        Ok(results)
+    }
+
+    /// Retrieves a user record from the database based on the provided `username`.
+    /// This method internally uses the `get_many` method to fetch the user by their username.
+    ///
+    /// # Arguments
+    ///
+    /// * `username`: A `String` representing the username to search for in the database.
+    /// * `executor`: An implementation of `sqlx::Executor` representing the database executor.
+    ///
+    /// # Returns
+    ///
+    /// This method returns `Result<Option<Self>, sqlx::error::Error>`, where:
+    /// - `Ok(Some(user))` is returned if a user with the provided `username` is found in the database.
+    /// - `Ok(None)` is returned if no user with the provided `username` is found in the database.
+    /// - An `sqlx::error::Error` is returned if there is an error executing the retrieval query.
+    ///
+    pub async fn get_by_username<'a, E>(
+        username: String,
+        executor: E
+    ) -> Result<Option<Self>, sqlx::error::Error>
+    where 
+        E: sqlx::Executor<'a, Database = Database>,
+    {
+        Self::get_many("id", username, executor)
+            .await
+            .map(|x| x.into_iter().next())
+    }
+
+    /// Removes the user and associated data from the database.
+    ///
+    /// # Arguments
+    ///
+    /// * `executor`: An implementation of `sqlx::Executor` representing the database executor.
+    ///
+    /// # Returns
+    ///
+    /// This method returns `Result<(), sqlx::error::Error>`, where:
+    /// - `Ok(())` is returned if the user and associated data are successfully removed from the database.
+    /// - An `sqlx::error::Error` is returned if there is an error executing the database queries.
+    ///
+    pub async fn remove<'a, E>(
+        &self,  
+        executor: E
+    ) -> Result<(), sqlx::error::Error>
+    where 
+        E: sqlx::Executor<'a, Database = Database> + Copy,
+    {
         let deleted_user: UserId = UserId(DELETED_USER.into());
 
         sqlx::query!(
@@ -101,7 +338,7 @@ impl User {
             deleted_user.0,
             self.id
         )
-        .execute(&mut *transaction)
+        .execute(executor)
         .await?;
 
         sqlx::query!(
@@ -111,7 +348,7 @@ impl User {
             ",
             self.id
         )
-        .execute(&mut *transaction)
+        .execute(executor)
         .await?;
 
         sqlx::query!(
@@ -121,7 +358,7 @@ impl User {
             ",
             self.id
         )
-        .execute(&mut *transaction)
+        .execute(executor)
         .await?;
 
         sqlx::query!(
@@ -133,7 +370,7 @@ impl User {
             deleted_user.0,
             self.id
         )
-        .execute(&mut *transaction)
+        .execute(executor)
         .await?;
 
         sqlx::query!(
@@ -143,201 +380,137 @@ impl User {
             ",
             self.id
         )
-        .execute(&mut *transaction)
+        .execute(executor)
         .await?;
 
         Ok(())
     }
+}
 
-    pub async fn is_member_of(
+#[derive(Debug)]
+pub struct LoginHistoryEntry {
+    // The login session's id
+    pub id: LoginHistoryEntryId,
+    // The session's user's id
+    pub user_id: UserId,
+    // The timestamp when the user logged in and the sesssion was created
+    pub login_timestamp: NaiveDateTime
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Token(pub String);
+
+#[derive(Debug, Serialize, Deserialize)]
+struct TokenClaims {
+    // The time the token was issues at (s)
+    pub iat: i64,
+    // The time the token will expire (issue time + one week)
+    pub exp: i64,
+    // The user's id
+    pub user_id: UserId,
+    // The user's login session
+    pub login_session: LoginSessionId,
+}
+
+impl LoginHistoryEntry {
+    /// Creates a new login history entry for a user and inserts it into the database.
+    ///
+    /// # Arguments
+    ///
+    /// * `user`: A reference to the `User` for whom the login history entry is being created.
+    /// * `transaction`: A mutable reference to a `sqlx::Transaction`, representing a database transaction.
+    ///
+    /// # Returns
+    ///
+    /// This method returns `Result<Self, error::ApiError>`, where:
+    /// - `Ok(entry)` is returned with the newly created `LoginHistoryEntry` if the creation and insertion are successful.
+    /// - An `error::ApiError` is returned if there is an error executing the database queries or generating the login history entry ID.
+    ///
+    pub async fn create(
+        user: &User,
+        transaction: &mut sqlx::Transaction<'_, Database>,
+    ) -> Result<Self, error::ApiError> {
+        let id = LoginHistoryEntryId::generate(&mut *transaction).await?;
+        let now = Utc::now();
+
+        let history = LoginHistoryEntry {
+            id,
+            user_id: user.id.clone(),
+            login_timestamp: now.naive_local()
+        };
+
+        history.insert(&mut *transaction).await?;
+
+        Ok(history)
+    }
+
+    /// Generates a bearer token for the login history entry and updates the user's `login_session` in the database.
+    ///
+    /// # Arguments
+    ///
+    /// * `transaction`: A mutable reference to a `sqlx::Transaction`, representing a database transaction.
+    ///
+    /// # Returns
+    ///
+    /// This method returns `Result<Token, error::ApiError>`, where:
+    /// - `Ok(token)` is returned with the newly generated authentication `Token` if successful.
+    /// - An `error::ApiError` is returned if there is an error executing the database queries or generating the token.
+    ///
+    pub async fn generate_token(
         &self,
-        project: ProjectId,
-        conn: &SqlPool,
-    ) -> Result<bool, ApiError>{
-        let query = sqlx::query!(
-            "
-            SELECT EXISTS(
-                SELECT 1
-                FROM project_members
-                WHERE user_id = $1
-                AND project_id = $2
-            )
-            AS member_exists
-            ",
-            self.id,
-            project.0
-        )
-        .fetch_one(conn)
-        .await?;
-    
-        Ok(query.member_exists.is_positive())
-    }
-
-    pub async fn find_by_login_session<'a, E>(
-        token: &UserToken,
-        transaction: E,
-    ) -> Result<Option<Self>, sqlx::error::Error> 
-    where
-        E: sqlx::Executor<'a, Database = Database>,
-    {
-        let result = sqlx::query!(
-            "
-            SELECT id, username, password, 
-            email, login_session
-            FROM users
-            WHERE login_session = $1
-            ",
-            token.login_session
-        )
-        .fetch_optional(transaction)
-        .await?;
-
-        if let Some(row) = result {
-            Ok(Some(Self {
-                id: UserId(row.id),
-                username: row.username,
-                password: row.password,
-                email: row.email,
-                login_session: row.login_session
-            }))
-        } else {
-            Ok(None)
-        }
-    }
-    
-    pub async fn find_by_username(
-        username: &String, 
         transaction: &mut sqlx::Transaction<'_, Database>,
-    ) -> Result<Option<Self>, sqlx::error::Error> {
-        let result = sqlx::query!(
+    ) -> Result<Token, error::ApiError> {
+        let session = LoginSessionId::generate(&mut *transaction).await?;
+
+        sqlx::query!(
             "
-            SELECT id, username, password, 
-                   email, login_session
-            FROM users
-            WHERE username = $1
+            UPDATE users
+            SET login_session = $1
+            WHERE id = $2
             ",
-            username
+            session,
+            self.user_id
         )
-        .fetch_optional(&mut *transaction)
+        .execute(&mut **transaction)
         .await?;
 
-        if let Some(row) = result {
-            Ok(Some(Self {
-                id: UserId(row.id),
-                username: row.username,
-                password: row.password,
-                email: row.email,
-                login_session: row.login_session
-            }))
-        } else {
-            Ok(None)
-        }
-    }
+        let now = Utc::now().timestamp_nanos() / 1_000_000_000; // nanosecond -> second
 
-    pub async fn find_by_id(
-        user_id: UserId,
-        transaction: &mut sqlx::Transaction<'_, Database>,
-    ) -> Result<Option<Self>, sqlx::error::Error> {
-        let result = sqlx::query!(
-            "
-            SELECT id, username, password, 
-                   email, login_session
-            FROM users
-            WHERE id = $1
-            ",
-            user_id
+        let payload = TokenClaims {
+            iat: now,
+            exp: now + ONE_WEEK,
+            user_id: self.user_id.clone(),
+            login_session: session
+        };
+
+        let token = jsonwebtoken::encode(
+            &Header::default(),
+            &payload,
+            &EncodingKey::from_secret(&KEY),
         )
-        .fetch_optional(&mut *transaction)
-        .await?;
+        .unwrap();
 
-        if let Some(row) = result {
-            Ok(Some(Self {
-                id: UserId(row.id),
-                username: row.username,
-                password: row.password,
-                email: row.email,
-                login_session: row.login_session
-            }))
-        } else {
-            Ok(None)
-        }
-    }
-    
-
-    pub async fn from_request(
-        req: HttpRequest,
-        transaction: &mut sqlx::Transaction<'_, Database>,
-    ) -> Result<Self, AuthenticationError> {
-        if let Some(user_id) = req.extensions().get::<UserId>() {
-            if let Some(user) = Self::find_by_id(user_id.clone(), &mut *transaction).await? {
-                return Ok(user);
-            }
-        } 
-
-        Err(AuthenticationError::InvalidToken)
-    }
-
-    pub fn generate_login_session(user_id: UserId) -> LoginSession {
-        LoginSession {
-            user_id,
-            login_session: Uuid::new_v4().to_simple().to_string()
-        } 
+        Ok(Token(token))
     }
 }
 
-impl Login {
-    pub async fn get_user(
+impl LoginHistoryEntry {
+    /// Inserts the login history entry into the database using the provided transaction.
+    ///
+    /// # Arguments
+    ///
+    /// * `transaction`: A mutable reference to a `sqlx::Transaction`, representing a database transaction.
+    ///
+    /// # Returns
+    ///
+    /// This method returns `Result<(), sqlx::error::Error>`, where:
+    /// - `Ok(())` is returned if the insertion is successful.
+    /// - An `sqlx::error::Error` is returned if there is an error executing the insertion query.
+    ///
+    pub async fn insert(
         &self,
         transaction: &mut sqlx::Transaction<'_, Database>,
-    ) -> Result<Option<User>, sqlx::error::Error> {
-        let results = sqlx::query!(
-            "
-            SELECT id, username, password, 
-            email, login_session
-            FROM users
-            WHERE username = $1
-            OR email = $2
-            ",
-            self.username_or_email,
-            self.password
-        )
-        .fetch_optional(&mut *transaction)
-        .await?;
-
-        if let Some(row) = results {
-            Ok(Some(User {
-                id: UserId(row.id),
-                username: row.username,
-                password: row.password,
-                email: row.email,
-                login_session: row.login_session
-            }))   
-        } else {
-            Ok(None)
-        }
-    }
-
-    pub async fn login(
-        &self,
-        transaction: &mut sqlx::Transaction<'_, Database>
-    ) -> Result<LoginSession, ApiError> {
-        let user = self
-            .get_user(&mut *transaction)
-            .await?
-            .ok_or(ApiError::NotFound("Could not find user".to_string()))?;
-
-        if user.login_session.is_some() {
-            return Err(AuthenticationError::AlreadyLoggedIn.into());
-        }
-
-        if !bcrypt::verify(&self.password, &user.password).unwrap() {
-            return Err(AuthenticationError::InvalidCredentials.into());
-        }   
-
-        let history = LoginHistory::create(&user.username, &mut *transaction)
-            .await
-            .ok_or_else(|| ApiError::NotFound("Could not find user".to_string()))?;
-
+    ) -> Result<(), sqlx::error::Error> {
         sqlx::query!(
             "
             INSERT INTO login_history (
@@ -347,53 +520,13 @@ impl Login {
                 $1, $2, $3
             )
             ",
-            history.id,
-            history.user_id,
-            history.login_timestamp
+            self.id,
+            self.user_id,
+            self.login_timestamp
         )
-        .execute(&mut *transaction)
+        .execute(&mut **transaction)
         .await?;
 
-        let session = User::generate_login_session(user.id);
-
-        sqlx::query!(
-            "
-            UPDATE users
-            SET login_session = $1
-            WHERE id = $2
-            ",
-            session.login_session,
-            session.user_id
-        )
-        .execute(&mut *transaction)
-        .await?;
-        
-        Ok(session)
-    }
-}
-
-impl Register {
-    pub async fn register(
-        self,
-        transaction: &mut sqlx::Transaction<'_, Database>,
-    ) -> Result<User, ApiError> {        
-        if User::find_by_username(&self.username, &mut *transaction).await?.is_some() {
-            return Err(ApiError::InvalidInput(format!("User '{}' already exists", self.username)))
-        }
-
-        let hashed_pwd = hash(&self.password, DEFAULT_COST).unwrap();
-        let user_id = UserId::generate(&mut *transaction).await?;
-        
-        let user: User = User {
-            id: user_id,
-            username: self.username,
-            password: hashed_pwd,
-            email: self.email,
-            login_session: None,
-        };
-
-        user.insert(&mut *transaction).await?;
-        
-        Ok(user)
+        Ok(())
     }
 }
