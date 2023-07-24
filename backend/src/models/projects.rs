@@ -1,45 +1,63 @@
-use crate::database::Database;
+use crate::{database::Database, error};
 
-use super::ids::{ProjectId, TaskGroupId, TaskId, UserId, ProjectMemberId};
-use super::tasks::{TaskGroup, Task};
-use actix_web::HttpRequest;
-use futures::TryStreamExt;
-use actix_web::HttpMessage;
+use super::id::{ProjectId, UserId, ProjectMemberId};
 
 #[derive(Serialize, Deserialize)]
 pub struct Project {
+    // The project's id
     pub id: ProjectId,
+    // The project's name (3 -> 30 charachters)
     pub name: String,
+    // The project owner's id
     pub owner: UserId,
+    // The project's icon's url
     pub icon_url: String,
+    // The project's visibility
     pub public: bool
 }
 
 #[derive(Serialize, Deserialize, Validate)]
 pub struct ProjectBuilder {
+    // The project's name (3 -> 30 charachters)
     #[validate(length(min = 3, max = 30))]
     name: String,
+    // The project's icon's url
     icon_url: String,
+    // The project's visibility
     public: bool
 }
 
-impl ProjectBuilder {
+impl Project {
+    /// Creates a new project and inserts it into the database.
+    ///
+    /// # Arguments
+    ///
+    /// * `form`: A `ProjectBuilder` instance containing the project details to be created.
+    /// * `creator`: The `UserId` of the user who is creating the project.
+    /// * `transaction`: A mutable reference to a `sqlx::Transaction`, representing a database transaction.
+    ///
+    /// # Returns
+    ///
+    /// This method returns `Result<Self, error::ApiError>`, where:
+    /// - `Ok(project)` is returned with the created `Project` instance if the creation and insertion are successful.
+    /// - An `error::ApiError` is returned if there is an error generating IDs or executing the database queries.
+    ///
     pub async fn create(
-        &self,
+        form: ProjectBuilder,
         creator: UserId,
         transaction: &mut sqlx::Transaction<'_, Database>,
-    ) -> Result<ProjectId, super::DatabaseError> {
+    ) -> Result<Self, error::ApiError> {
         let id = ProjectId::generate(&mut *transaction).await?;
 
-        let project = Project {
+        let project = Self {
             id,
-            name: self.name.clone(),
+            name: form.name.clone(),
             owner: creator.clone(),
-            icon_url: self.icon_url.clone(),
-            public: self.public
+            icon_url: form.icon_url.clone(),
+            public: form.public
         };
 
-        project.insert(&mut *transaction).await?;
+        project.insert(transaction).await?;
 
         let id = ProjectMemberId::generate(&mut *transaction).await?;
 
@@ -53,15 +71,98 @@ impl ProjectBuilder {
 
         project_member.insert(&mut *transaction).await?;
 
-        Ok(project.id)
+        Ok(project)
+    }
+
+    /// Removes the project and associated data from the database.
+    ///
+    /// # Arguments
+    ///
+    /// * `id`: The `ProjectId` of the project to be removed.
+    /// * `transaction`: A mutable reference to a `sqlx::Transaction`, representing a database transaction.
+    ///
+    /// # Returns
+    ///
+    /// This method returns `Result<(), error::ApiError>`, where:
+    /// - `Ok(())` is returned if the project and associated data are successfully removed from the database.
+    /// - An `error::ApiError` is returned if there is an error executing the database queries.
+    ///
+    pub async fn remove(
+        id: ProjectId,
+        transaction: &mut sqlx::Transaction<'_, Database>,
+    ) -> Result<(), error::ApiError> {
+        // Remove all associated sub tasks
+        sqlx::query!(
+            "
+            DELETE FROM sub_tasks
+            WHERE project_id = $1
+            ",
+            id
+        )
+        .execute(&mut **transaction)
+        .await?;
+        // Remove all associated tasks
+        sqlx::query!(
+            "
+            DELETE FROM tasks
+            WHERE project_id = $1
+            ",
+            id
+        )
+        .execute(&mut **transaction)
+        .await?;
+        // Remove all associated task groups
+        sqlx::query!(
+            "
+            DELETE FROM task_groups
+            WHERE project_id = $1
+            ",
+            id
+        )
+        .execute(&mut **transaction)
+        .await?;
+        // Remove all memberships
+        sqlx::query!(
+            "
+            DELETE FROM project_members
+            WHERE project_id = $1
+            ",
+            id
+        )
+        .execute(&mut **transaction)
+        .await?;
+        // Remove the project itself
+        sqlx::query!(
+            "
+            DELETE FROM projects
+            WHERE id = $1
+            ",
+            id
+        )
+        .execute(&mut **transaction)
+        .await?;
+
+        Ok(())
     }
 }
 
 impl Project {
-    async fn insert(
+    /// Inserts the project into the database.
+    ///
+    /// # Arguments
+    ///
+    /// * `transaction`: A mutable reference to a `sqlx::Transaction`, representing a database transaction.
+    ///
+    /// # Returns
+    ///
+    /// This method returns `Result<(), error::ApiError>`, where:
+    /// - `Ok(())` is returned if the insertion is successful.
+    /// - An `error::ApiError` is returned if there is an error executing the database query.
+    ///
+    pub async fn insert(
         &self,
         transaction: &mut sqlx::Transaction<'_, Database>,
-    ) -> Result<(), sqlx::error::Error> {   
+    ) -> Result<(), error::ApiError> {
         sqlx::query!(
             "
             INSERT INTO projects (
@@ -78,20 +179,35 @@ impl Project {
             self.icon_url,
             self.public
         )
-        .execute(&mut *transaction)
+        .execute(&mut **transaction)
         .await?;
 
         Ok(())
     }
 
+    /// Retrieves a project from the database by its ID.
+    ///
+    /// # Arguments
+    ///
+    /// * `id`: The `ProjectId` of the project to retrieve.
+    /// * `executor`: An implementation of `sqlx::Executor`, representing the database executor.
+    ///
+    /// # Returns
+    ///
+    /// This method returns `Result<Option<Self>, sqlx::error::Error>`, where:
+    /// - `Ok(Some(project))` is returned with the retrieved `Project` if it exists in the database.
+    /// - `Ok(None)` is returned if no project is found with the specified ID.
+    /// - An `sqlx::error::Error` is returned if there is an error executing the database query.
+    ///
     pub async fn get<'a, E>(
         id: ProjectId,
-        transaction: E,
+        executor: E,
     ) -> Result<Option<Self>, sqlx::error::Error>
     where
-        E: sqlx::Executor<'a, Database = Database>,
-    { 
-        let query = sqlx::query!(
+        E: sqlx::Executor<'a, Database = Database>
+    {
+        let project = sqlx::query_as!(
+            Project,
             "
             SELECT id, name, owner,
                    icon_url, public
@@ -100,243 +216,49 @@ impl Project {
             ",
             id
         )
-        .fetch_optional(transaction)
+        .fetch_optional(executor)
         .await?;
 
-        if let Some(row) = query {
-            Ok(Some(Self {
-               id: ProjectId(row.id),
-               name: row.name,
-               owner: UserId(row.owner),
-               icon_url: row.icon_url,
-               public: row.public
-            }))
-        } else  {
-            Ok(None)
-        }
+        Ok(project)
     }
 
-    pub async fn from_user(
-        id: UserId,
-        transaction: &mut sqlx::Transaction<'_, Database>,
-    ) -> Result<Vec<Self>, sqlx::error::Error> {
-        let memberships = ProjectMember::from_user(id, &mut *transaction).await?;
-
-        let mut projects: Vec<Self> = vec![];
-
-        for member in memberships {
-            if let Some(project) = Self::get(member.project_id, &mut *transaction).await? {
-                projects.push(project)
-            }
-        }
-
-        Ok(projects)
-    }
-
-    pub async fn remove(
-        id: ProjectId,
-        transaction: &mut sqlx::Transaction<'_, Database>,
-    ) -> Result<(), sqlx::error::Error> {
-        sqlx::query!(
-            "
-            DELETE FROM sub_tasks
-            WHERE project_id = $1
-            ",
-            id
-        )
-        .execute(&mut *transaction)
-        .await?;
-
-        sqlx::query!(
-            "
-            DELETE FROM tasks
-            WHERE project_id = $1
-            ",
-            id
-        )
-        .execute(&mut *transaction)
-        .await?;
-
-        sqlx::query!(
-            "
-            DELETE FROM task_groups
-            WHERE project_id = $1
-            ",
-            id
-        )
-        .execute(&mut *transaction)
-        .await?;
-
-        sqlx::query!(
-            "
-            DELETE FROM project_members
-            WHERE project_id = $1
-            ",
-            id
-        )
-        .execute(&mut *transaction)
-        .await?;
-
-        sqlx::query!(
-            "
-            DELETE FROM projects
-            WHERE id = $1
-            ",
-            id
-        )
-        .execute(&mut *transaction)
-        .await?;
-
-        Ok(())
-    }
-
-    pub async fn get_members<'a, E>(
-        id: ProjectId,
-        transaction: E,
-    ) -> Result<Vec<ProjectMember>, sqlx::Error>
-    where
+    /// Retrieves multiple projects from the database based on the specified column and value.
+    ///
+    /// # Arguments
+    ///
+    /// * `column`: The column name to search for the specified value.
+    /// * `value`: The value to match in the specified column.
+    /// * `executor`: An implementation of `sqlx::Executor`, representing the database executor.
+    ///
+    /// # Returns
+    ///
+    /// This method returns `Result<Vec<Self>, sqlx::error::Error>`, where:
+    /// - `Ok(projects)` is returned with a vector of retrieved `Project` instances that match the specified column and value.
+    /// - An `sqlx::error::Error` is returned if there is an error executing the database query.
+    ///
+    pub async fn get_many<'a, E>(
+        column: &str,
+        value: String,
+        executor: E,
+    ) -> Result<Vec<Self>, sqlx::error::Error>
+    where 
         E: sqlx::Executor<'a, Database = Database>,
     {
-        let users = sqlx::query!(
+        let results = sqlx::query_as!(
+            Project,
             "
-            SELECT id, project_id, user_id, 
-                permissions, accepted 
-            FROM project_members 
-            WHERE project_id = ?
-            ",
-            id
-        )
-        .fetch_many(transaction)
-        .try_filter_map(|e| async {
-            Ok(e.right().map(|m| ProjectMember {
-                id: ProjectMemberId(m.id),
-                project_id: ProjectId(m.project_id),
-                user_id: UserId(m.user_id),
-                permissions: Permissions::from_bits(m.permissions as u64).unwrap_or_default(),
-                accepted: m.accepted,
-            }))
-        })
-        .try_collect::<Vec<ProjectMember>>()
-        .await?;
-
-        Ok(users)
-    }
-
-    pub async fn get_task_groups<'a, E> ( 
-        id: ProjectId,
-        transaction: E,
-    ) -> Result<Vec<TaskGroup>, sqlx::error::Error>
-    where
-        E: sqlx::Executor<'a, Database = Database>,
-    {
-        let task_groups = sqlx::query!(
-            "
-            SELECT id, project_id, name, position
-            FROM task_groups
-            WHERE project_id = $1
-            ",
-            id
-        )
-        .fetch_many(transaction)
-        .try_filter_map(|e| async {
-            Ok(e.right().map(|m| TaskGroup {
-                id: TaskGroupId(m.id),
-                project_id: ProjectId(m.project_id),
-                name: m.name,
-                position: m.position
-            }))
-        })
-        .try_collect::<Vec<TaskGroup>>()
-        .await?;
-
-        Ok(task_groups)
-    }   
-
-    pub async fn get_tasks<'a, E>(
-        id: ProjectId,
-        exec: E
-    ) -> Result<Vec<Task>, sqlx::error::Error> 
-    where
-        E: sqlx::Executor<'a, Database = Database>,
-    {
-        let tasks = sqlx::query!(
-            "
-            SELECT id, project_id, task_group_id, 
-            name, information, creator, due, 
-            primary_colour, accent_colour, position,
-            created
-            FROM tasks
-            WHERE project_id = $1
-            ",
-            id
-        )
-        .fetch_many(exec)
-        .try_filter_map(|result| async {
-            Ok(result.right().map(|row| Task {
-                id: TaskId(row.id),
-                project_id: ProjectId(row.project_id),
-                task_group_id: TaskGroupId(row.task_group_id),
-                name: row.name,
-                information: row.information,
-                creator: UserId(row.creator),
-                due: row.due,
-                primary_colour: row.primary_colour,
-                accent_colour: row.accent_colour,
-                position: row.position,
-                created: row.created
-            }))
-        })
-        .try_collect::<Vec<Task>>()
-        .await?;
-
-        Ok(tasks)
-    }
-
-    pub async fn transfer_ownership(
-        project: ProjectId,
-        new_owner: ProjectMemberId,
-        transaction: &mut sqlx::Transaction<'_, Database>,
-    ) -> Result<(), sqlx::error::Error> {
-        sqlx::query!(
-            "
-            UPDATE projects
-            SET owner = $1
-            WHERE id = $2
-            ",
-            new_owner,
-            project
-        )
-        .execute(&mut *transaction)
-        .await?;
-
-        Ok(())
-    }
-
-    pub async fn is_public<'a, E>(
-        project_id: ProjectId,
-        executor: E
-    ) -> Result<bool, super::DatabaseError>
-    where
-        E: sqlx::Executor<'a, Database = Database>,
-    {
-        let query = sqlx::query!(
-            "
-            SELECT public
+            SELECT id, name, owner,
+                   icon_url, public
             FROM projects
-            WHERE id = $1
+            WHERE $1 = $2
             ",
-            project_id
+            column,
+            value
         )
-        .fetch_one(executor)
-        .await?; // Return database error for easier mapping in middleware
-    
-        Ok(query.public) 
-    }
-}
+        .fetch_all(executor)
+        .await?;
 
-impl ProjectId {
-    pub fn from_request(req: &actix_web::HttpRequest) -> Option<Self> {
-        req.extensions().get::<ProjectId>().cloned()
+        Ok(results)
     }
 }
 
@@ -344,47 +266,73 @@ bitflags::bitflags! {
     #[derive(Serialize, Deserialize)]
     #[serde(transparent)]
     pub struct Permissions: u64 {
+        // Allows for tasks to be created, removed, assigned and editted
         const MANAGE_TASKS = 1 << 0;
+        // Allows for the project settings to be changed
         const MANAGE_PROJECT = 1 << 1;
+        // Allows for the project members to be added and removed and roles changed
         const MANAGE_TEAM = 1 << 2;
-        const ALL = Self::MANAGE_TASKS.bits 
-            | Self::MANAGE_PROJECT.bits
-            | Self::MANAGE_TEAM.bits;
+        // All permission together
+        const ALL = Self::MANAGE_TASKS.bits() | Self::MANAGE_PROJECT.bits() | Self::MANAGE_TEAM.bits();
+    }
+}
+
+impl From<i64> for Permissions {
+    fn from(value: i64) -> Self {
+        Permissions::from_bits(value as u64).unwrap_or_default()
     }
 }
 
 impl Default for Permissions {
+    /// Returns the default value for the `Permissions` enum.
+    ///
+    /// The `default` function provides a way to create a default value for the `Permissions` enum.
+    /// When no explicit value is provided, this default value is used. For the `Permissions` enum,
+    /// the default value returned is `Permissions::MANAGE_TASKS`.
+    ///
+    /// # Returns
+    ///
+    /// The default value for the `Permissions` enum, which is `Permissions::MANAGE_TASKS`.
+    ///
     fn default() -> Permissions {
         Permissions::MANAGE_TASKS
     }
 }
 
-#[derive(Serialize)]
 pub struct ProjectMember {
+    // The project member's id
     pub id: ProjectMemberId,
+    // The project the membership is for's id
     pub project_id: ProjectId,
+    // The user's id
     pub user_id: UserId,
+    // The user's permissions 
     pub permissions: Permissions,
+    // Whether the user has accepted the project's invitation
     pub accepted: bool,
 }
 
-
-#[derive(Deserialize)]
-pub struct ProjectInvitation {
-    pub user: UserId,
-    pub project: ProjectId,
-}
-
 impl ProjectMember {
-    pub async fn create(
+    /// Invites a user to the project and inserts the invitation as a `ProjectMember` into the database.
+    ///
+    /// # Arguments
+    ///
+    /// * `user`: The `UserId` of the user to be invited to the project.
+    /// * `project`: A reference to the `Project` instance to which the user is being invited.
+    /// * `transaction`: A mutable reference to a `sqlx::Transaction`, representing a database transaction.
+    ///
+    /// # Returns
+    ///
+    /// This method returns `Result<ProjectMember, error::ApiError>`, where:
+    /// - `Ok(member)` is returned with the created `ProjectMember` instance representing the invitation
+    ///    if the insertion is successful and the user is invited to the project.
+    /// - An `error::ApiError` is returned if there is an error generating an ID or executing the database query.
+    ///
+    pub async fn invite_user(
         user: UserId,
         project: &Project,
         transaction: &mut sqlx::Transaction<'_, Database>,
-    ) -> Result<ProjectMember, super::DatabaseError> {
-        if project.owner.0 != user.0 {
-            return Err(super::DatabaseError::AlreadyExists);
-        }
-
+    ) -> Result<ProjectMember, error::ApiError> {
         let member_id = ProjectMemberId::generate(&mut *transaction).await?;
 
         let member = ProjectMember {
@@ -400,178 +348,123 @@ impl ProjectMember {
         Ok(member)
     }
 
-    pub async fn invite(
-        invitation: ProjectInvitation,
+    /// Accepts the invitation to the project by setting the "accepted" field to true in the database.
+    ///
+    /// # Arguments
+    ///
+    /// * `transaction`: A mutable reference to a `sqlx::Transaction`, representing a database transaction.
+    ///
+    /// # Returns
+    ///
+    /// This method returns `Result<(), error::ApiError>`, where:
+    /// - `Ok(())` is returned if the acceptance is successful and the "accepted" field is updated to true in the database.
+    /// - An `error::ApiError` is returned if there is an error executing the database query.
+    ///
+    pub async fn accept_invitation(
+        &self,
         transaction: &mut sqlx::Transaction<'_, Database>,
-    ) -> Result<ProjectMember, super::DatabaseError> {
-        let query = sqlx::query!(
+    ) -> Result<(), error::ApiError> {
+        sqlx::query!(
             "
-            SELECT EXISTS (
-                SELECT 1
-                FROM project_members
-                WHERE user_id = $1 
-                AND project_id = $2
-            ) 
-            AS member_exists
+            UPDATE project_members
+            SET accepted = true
+            WHERE id = $1
             ",
-            invitation.user.0,
-            invitation.project.0
+            self.id
         )
-        .fetch_one(&mut *transaction)
+        .execute(&mut **transaction)
         .await?;
 
-        if query.member_exists.is_positive() {
-            return Err(super::DatabaseError::AlreadyExists);
-        }
-
-        let member_id = ProjectMemberId::generate(&mut *transaction).await?;
-
-        let member = ProjectMember {
-            id: member_id,
-            project_id: invitation.project,
-            user_id: invitation.user,
-            permissions: Permissions::default(),
-            accepted: false,
-        };
-
-        member.insert(&mut *transaction).await?;
-
-        Ok(member)
+        Ok(())
     }
 
-    pub async fn from_request<'a, E>(
-        req: HttpRequest,
-        transaction: E,
-    ) -> Result<Option<Self>, super::DatabaseError>
-    where
-        E: sqlx::Executor<'a, Database = Database>,
-    {
-        if let Some(id) = req.extensions().get::<ProjectMemberId>() {
-            let query = sqlx::query!(
-                "
-                SELECT id, project_id,
-                user_id, permissions, 
-                accepted
-                FROM project_members
-                WHERE id = $1
-                ",
-                id
-            )
-            .fetch_optional(transaction)
-            .await?;
-
-            if let Some(row) = query {
-                return Ok(Some(Self {
-                    id: ProjectMemberId(row.id),
-                    project_id: ProjectId(row.project_id),
-                    user_id: UserId(row.user_id),
-                    permissions: Permissions::from_bits(row.permissions as u64).unwrap_or_default(),
-                    accepted: row.accepted,
-                }))
-            }
-        }
-        Ok(None)
-    }
-
-    pub async fn get<'a, E> (
-        member: ProjectMemberId,
-        transaction: E,
-    ) -> Result<Option<Self>, sqlx::error::Error>
-    where
-        E: sqlx::Executor<'a, Database = Database>,
-    {
-        let query = sqlx::query!(
-            "
-            SELECT id, project_id,
-                user_id, permissions, 
-                accepted
-            FROM project_members
-            WHERE project_id = $1
-            ",
-            member,
-        )
-        .fetch_optional(transaction)
-        .await?;
-
-        if let Some(row) = query {
-            Ok(Some(Self {
-                id: ProjectMemberId(row.id),
-                project_id: ProjectId(row.project_id),
-                user_id: UserId(row.user_id),
-                permissions: Permissions::from_bits(row.permissions as u64).unwrap_or_default(),
-                accepted: row.accepted,
-            }))
-        } else {
-            Ok(None)
-        }
-    }
-
-    pub async fn from_user(
-        user: UserId,
+    /// Denies the invitation to the project by removing the project member from the database
+    /// if the member's "accepted" field is false (not accepted).
+    ///
+    /// # Arguments
+    ///
+    /// * `transaction`: A mutable reference to a `sqlx::Transaction`, representing a database transaction.
+    ///
+    /// # Returns
+    ///
+    /// This method returns `Result<(), error::ApiError>`, where:
+    /// - `Ok(())` is returned if the denial is successful, and the project member is removed from the database.
+    /// - An `error::ApiError` is returned if there is an error executing the database query.
+    ///
+    pub async fn deny_invitation(
+        &self,
         transaction: &mut sqlx::Transaction<'_, Database>,
-    ) -> Result<Vec<Self>, sqlx::error::Error> {
-        let query = sqlx::query!(
+    ) -> Result<(), error::ApiError> {
+        sqlx::query!(
             "
-            SELECT id, project_id,
-                user_id, permissions, 
-                accepted
-            FROM project_members
-            WHERE user_id = $1
+            DELETE FROM project_members
+            WHERE id = $1
+            AND accepted = false
             ",
-            user.0
+            self.id
         )
-        .fetch_many(&mut *transaction)
-        .try_filter_map(|e| async {
-            Ok(e.right().map(|m| Self {
-                id: ProjectMemberId(m.id),
-                project_id: ProjectId(m.project_id),
-                user_id: UserId(m.user_id),
-                permissions: Permissions::from_bits(m.permissions as u64).unwrap_or_default(),
-                accepted: m.accepted,
-            }))
-        })
-        .try_collect::<Vec<Self>>()
+        .execute(&mut **transaction)
         .await?;
 
-        Ok(query)
+        Ok(())
     }
 
-    pub async fn from_user_for_project<'a, E>(
-        user: UserId,
-        project: ProjectId,
-        transaction: E,
-    ) -> Result<Option<Self>, sqlx::error::Error>
-    where
-        E: sqlx::Executor<'a, Database = Database>,
-    {
-        let query = sqlx::query!(
+    /// Allows the project member to leave the project by removing the membership from the database.
+    /// This method is typically used by members who have voluntarily decided to leave the project.
+    ///
+    /// # Arguments
+    ///
+    /// * `transaction`: A mutable reference to a `sqlx::Transaction`, representing a database transaction.
+    ///
+    /// # Returns
+    ///
+    /// This method returns `Result<(), error::ApiError>`, where:
+    /// - `Ok(())` is returned if the member successfully leaves the project, and the membership is removed from the database.
+    /// - An `error::ApiError` is returned if there is an error executing the database query.
+    ///
+    pub async fn leave(
+        &self,
+        transaction: &mut sqlx::Transaction<'_, Database>,
+    ) -> Result<(), error::ApiError> {
+        // Remove all task assignments
+        sqlx::query!(
             "
-            SELECT id, project_id,
-                user_id, permissions, 
-                accepted
-            FROM project_members
-            WHERE user_id = $1
-            AND project_id = $2
+            UPDATE sub_tasks
+            SET assignee = NULL
+            WHERE assignee = $1
             ",
-            user,
-            project
+            self.id,
         )
-        .fetch_optional(transaction)
+        .execute(&mut **transaction)
+        .await?;
+        // Remove the membership itself
+        sqlx::query!(
+            "
+            DELETE FROM project_members
+            WHERE id = $1
+            ",
+            self.id
+        )
+        .execute(&mut **transaction)
         .await?;
 
-        if let Some(row) = query {
-            Ok(Some(Self {
-                id: ProjectMemberId(row.id),
-                project_id: ProjectId(row.project_id),
-                user_id: UserId(row.user_id),
-                permissions: Permissions::from_bits(row.permissions as u64).unwrap_or_default(),
-                accepted: row.accepted,
-            }))
-        } else {
-            Ok(None)
-        }
+        Ok(())
     }
+}
 
+impl ProjectMember {
+    /// Inserts the `ProjectMember` instance into the `project_members` table in the database.
+    ///
+    /// # Arguments
+    ///
+    /// * `transaction`: A mutable reference to a `sqlx::Transaction`, representing a database transaction.
+    ///
+    /// # Returns
+    ///
+    /// This method returns `Result<(), sqlx::error::Error>`, where:
+    /// - `Ok(())` is returned if the insertion is successful, and the `ProjectMember` is added to the database.
+    /// - An `sqlx::error::Error` is returned if there is an error executing the database query.
+    ///
     pub async fn insert(
         &self,
         transaction: &mut sqlx::Transaction<'_, Database>,
@@ -594,44 +487,112 @@ impl ProjectMember {
             permssions,
             self.accepted
         )
-        .execute(&mut *transaction)
+        .execute(&mut **transaction)
         .await?;
 
         Ok(())
     }
 
-    pub async fn accept_invitation(
-        &self,
-        transaction: &mut sqlx::Transaction<'_, Database>,
-    ) -> Result<(), sqlx::error::Error> {
-        sqlx::query!(
+    /// Retrieves a `ProjectMember` from the `project_members` table based on its ID.
+    ///
+    /// # Arguments
+    ///
+    /// * `id`: The `ProjectId` of the `ProjectMember` to retrieve.
+    /// * `executor`: A type implementing `sqlx::Executor` that represents the database connection.
+    ///
+    /// # Returns
+    ///
+    /// This method returns `Result<Option<Self>, sqlx::error::Error>`, where:
+    /// - `Ok(Some(member))` is returned with the retrieved `ProjectMember` instance if found in the database.
+    /// - `Ok(None)` is returned if no `ProjectMember` with the specified ID is found in the database.
+    /// - An `sqlx::error::Error` is returned if there is an error executing the database query.
+    ///
+    pub async fn get<'a, E>(
+        id: ProjectId,
+        executor: E,
+    ) -> Result<Option<Self>, sqlx::error::Error>
+    where
+        E: sqlx::Executor<'a, Database = Database>
+    {
+        let project = sqlx::query_as!(
+            ProjectMember,
             "
-            UPDATE project_members
-            SET accepted = true
+            SELECT id, project_id, user_id,
+                   permissions, accepted
+            FROM project_members
             WHERE id = $1
             ",
-            self.id
+            id
         )
-        .execute(&mut *transaction)
+        .fetch_optional(executor)
         .await?;
 
-        Ok(())
+        Ok(project)
     }
 
-    pub async fn deny_invitation(
-        &self,
-        transaction: &mut sqlx::Transaction<'_, Database>,
-    ) -> Result<(), sqlx::error::Error> {
-        sqlx::query!(
+    /// Retrieves a list of `ProjectMember` instances from the `project_members` table
+    /// based on the specified column and value.
+    ///
+    /// # Arguments
+    ///
+    /// * `column`: The name of the column to use in the WHERE clause of the query.
+    /// * `value`: The value to use for filtering the results in the specified column.
+    /// * `executor`: A type implementing `sqlx::Executor` that represents the database connection.
+    ///
+    /// # Returns
+    ///
+    /// This method returns `Result<Vec<Self>, sqlx::error::Error>`, where:
+    /// - `Ok(members)` is returned with the list of `ProjectMember` instances if found in the database.
+    /// - An empty vector is returned if no `ProjectMember` with the specified column and value is found in the database.
+    /// - An `sqlx::error::Error` is returned if there is an error executing the database query.
+    ///
+    pub async fn get_many<'a, E>(
+        column: &str,
+        value: String,
+        executor: E,
+    ) -> Result<Vec<Self>, sqlx::error::Error>
+    where 
+        E: sqlx::Executor<'a, Database = Database>,
+    {
+        let results = sqlx::query_as!(
+            ProjectMember,
             "
-            DELETE FROM project_members
-            WHERE id = $1
+            SELECT id, project_id, user_id,
+                   permissions, accepted
+            FROM project_members
+            WHERE $1 = $2
             ",
-            self.id
+            column,
+            value
         )
-        .execute(&mut *transaction)
+        .fetch_all(executor)
         .await?;
 
-        Ok(())
+        Ok(results)
     }
+
+    /// Retrieves a list of `ProjectMember` instances for a given `UserId`.
+    ///
+    /// # Arguments
+    ///
+    /// * `user`: The `UserId` for which to retrieve the project memberships.
+    /// * `executor`: A type implementing `sqlx::Executor` that represents the database connection.
+    ///
+    /// # Returns
+    ///
+    /// This method returns `Result<Vec<Self>, sqlx::error::Error>`, where:
+    /// - `Ok(members)` is returned with the list of `ProjectMember` instances if found in the database.
+    /// - An empty vector is returned if the user does not have any project memberships in the database.
+    /// - An `sqlx::error::Error` is returned if there is an error executing the database query.
+    ///
+    pub async fn get_memberships<'a, E>(
+        user: UserId,
+        executor: E,
+    ) -> Result<Vec<Self>, sqlx::error::Error>
+    where
+        E: sqlx::Executor<'a, Database = Database>
+    {
+        Self::get_many("user_id", user.0, executor).await
+    }
+
 }
