@@ -12,49 +12,39 @@ postgres = [ "sqlx/postgres"]
 sqlite = [ "sqlx/sqlite"]
 
 [dependencies.sqlx]
-version = "0.6.2"
+version = "0.7.1"
 default-features = false
-features = [ "runtime-actix-rustls", "macros", "sqlite", "chrono", "decimal", "offline", "uuid", "json" ]
-
-
-[dependencies]
-actix-web = "4.1.0"
-actix-rt = "2.7.0"
-actix-service = "1.0.6"
-actix-cors = "0.6.1"
-actix-files = "0.6.2"
-
-log = "0.4.14"
-env_logger = "0.9.0"
-
-serde = "1.0.123"
-serde_derive = "1.0.123"
-serde_json = "1.0.62"
-serde_qs = "0.8.2"
-
-syn = { version = "1.0", features = ["full"] }
-quote = "1.0"
-proc-macro2 = "1.0"
-dotenv = "0.15.0"
-futures = "0.3.12"
-failure = "0.1.8"
-derive_more = "0.99.11"
-jsonwebtoken = "7.2.0"
-bcrypt = "0.10.1"
-censor = "0.3.0"
-rand = "0.8.5"
-bitflags = "1.3.2"
-thiserror = "1.0.38"
-ory-client = "1.1.33"
-url = "2.3.1"
-urlencoding = "2.1.2"
-regex = "1.8.4"
-validator = { version = "0.15", features = ["derive"] }
+features = [ "runtime-tokio", "macros", "migrate", "time", "chrono" ]
 
 [dependencies.chrono]
 version = "0.4.19"
 features = ["serde"]
 
 [dependencies.uuid]
-version = "0.8.2"
+version = "1.4.1"
 features = ["v4"]
+
+[dependencies]
+# Poem
+poem-openapi = { version = "3.0.0", features = ["swagger-ui", "openapi-explorer"]}
+poem = "1.3.57"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+# Serde
+serde = "1.0.123"
+serde_derive = "1.0.123"
+serde_json = "1.0.62"
+serde_qs = "0.12.0"
+
+# Misc
+nanoid = "0.4.0"
+rand = "0.8.5"
+color-eyre = "0.6.2"
+tracing = "0.1.37"
+bitflags = { version = "2.3.3", features = ["serde"] }
+dotenv = "0.15.0"
+thiserror = "1.0.38"
+censor = "0.3.0"
+jsonwebtoken = "8.3.0"
+bcrypt = "0.15.0"
+validator = { version = "0.16.1", features = ["derive"] }

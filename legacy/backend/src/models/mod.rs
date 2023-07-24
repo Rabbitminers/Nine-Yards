@@ -1,8 +1,13 @@
 use thiserror::Error;
 
 pub mod users;
-pub mod id;
+pub mod user_token;
 pub mod projects;
+pub mod ids;
+pub mod tasks;
+pub mod login_history;
+pub mod notifications;
+pub mod audit;
 
 #[derive(Error, Debug)]
 pub enum DatabaseError {
@@ -19,8 +24,5 @@ pub enum DatabaseError {
     Json(#[from] serde_json::Error),
 
     #[error("Entry already exists")]
-    AlreadyExists,
-
-    #[error("{0} not found")]
-    NotFound(String)
+    AlreadyExists
 }
