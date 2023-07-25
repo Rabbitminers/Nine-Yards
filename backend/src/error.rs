@@ -20,7 +20,7 @@ pub enum ApiError {
     #[error("Error while validating input: {0}")]
     Validation(String),
 
-    #[error("Could not find: {0}")]
+    #[error("Could not find {0}")]
     NotFound(String),
 
     #[error("Authentication Error: {0}")]
