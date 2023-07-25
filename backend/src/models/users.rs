@@ -303,7 +303,7 @@ impl User {
     where 
         E: sqlx::Executor<'a, Database = Database>,
     {
-        Self::get_many("id", username, executor)
+        Self::get_many("username", username, executor)
             .await
             .map(|x| x.into_iter().next())
     }

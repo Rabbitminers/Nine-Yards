@@ -689,10 +689,24 @@ pub struct SubTaskBuilder {
 }
 
 impl SubTask {
+    /// Creates a new sub-task and inserts it into the database within the provided transaction.
+    ///
+    /// # Arguments
+    ///
+    /// * `task_id` - The ID of the parent task associated with the sub-task.
+    /// * `project_id` - The ID of the project to which the task belongs. This value is assumed to be collected from the `task_id`.
+    /// * `form` - A `SubTaskBuilder` containing the information to create the sub-task.
+    /// * `transaction` - A mutable reference to the SQLx transaction that the creation and insertion will be performed within.
+    ///
+    /// # Returns
+    ///
+    /// This function returns `Result<Self, error::ApiError>`.
+    ///
+    /// - `Ok(sub_task)`: The created `SubTask` object if the insertion is successful.
+    /// - `Err`: If an error occurs during the creation or insertion process, `error::ApiError` will be returned.
     pub async fn create(
         task_id: TaskId,
         project_id: ProjectId, // Assume the project was collected from the task id
-        creator: ProjectMemberId, // Assume the membership was collected from the task id
         form: SubTaskBuilder,
         transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<Self, error::ApiError> {
@@ -727,6 +741,18 @@ impl SubTask {
         Ok(sub_task)
     }
 
+    /// Removes the sub-task from the database within the provided transaction.
+    ///
+    /// # Arguments
+    ///
+    /// * `transaction` - A mutable reference to the SQLx transaction that the removal will be performed within.
+    ///
+    /// # Returns
+    ///
+    /// This function returns `Result<(), error::ApiError>`.
+    ///
+    /// - `Ok(())`: If the sub-task is successfully removed from the database.
+    /// - `Err`: If an error occurs during the removal process, `error::ApiError` will be returned.
     pub async fn remove(
         &self,
         transaction: &mut sqlx::Transaction<'_, Database>,

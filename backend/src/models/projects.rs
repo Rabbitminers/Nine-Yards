@@ -278,6 +278,17 @@ bitflags::bitflags! {
 }
 
 impl From<i64> for Permissions {
+    /// Converts an integer value into a `Permissions` bitset.
+    ///
+    /// # Arguments
+    ///
+    /// * `value`: An `i64` value representing the integer value to convert into the `Permissions` bitset.
+    ///
+    /// # Returns
+    ///
+    /// This method returns a `Permissions` instance, which is a bitset representing the permissions.
+    /// or a the default permission set if the value given is invalid
+    ///
     fn from(value: i64) -> Self {
         Permissions::from_bits(value as u64).unwrap_or_default()
     }
