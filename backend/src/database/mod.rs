@@ -1,7 +1,5 @@
 use std::{env, time::Duration};
 
-use thiserror::Error;
-
 pub async fn connect() -> Result<super::SqlPool, sqlx::Error> {
     let database_url = env::var("DATABASE_URL")
             .expect("DATABASE_URL not found.");
