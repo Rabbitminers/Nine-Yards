@@ -1,13 +1,109 @@
-use serde_derive::{Serialize, Deserialize};
-
 const ID_RETRY_COUNT: usize = 20; 
 
+const BASE62_CHARS: [u8; 62] =
+    *b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+
+/// Check if the given ID is already used in the specified database table.
+///
+/// # Arguments
+///
+/// - `table_name`: The name of the database table to check for identifier uniqueness.
+/// - `id`: The ID to check for uniqueness.
+/// - `transaction`: The database transaction to use for the query.
+///
+/// # Returns
+///
+/// `true` if the ID is already used in the table, `false` otherwise.
+async fn is_id_used(
+    table_name: &str,
+    id: &str, 
+    transaction: &mut sqlx::Transaction<'_, crate::database::Database>
+) -> Result<bool, sqlx::error::Error> {
+    let result = sqlx::query!(
+        "
+        SELECT COUNT(*) 
+        AS count 
+        FROM users
+        WHERE $1 = $2",
+        table_name, id
+    )
+    .fetch_one(&mut **transaction)
+    .await?;
+
+    Ok(result.count > 0 )
+}
+
+/// Generate a new base62-encoded identifier of the specified length.
+///
+/// # Arguments
+///
+/// - `length`: The length of the identifier to be generated.
+///
+/// # Returns
+///
+/// A new base62-encoded identifier of the specified length.
+fn generate_base62_id(length: usize) -> String {
+    let mut id = String::with_capacity(length);
+    let base: u64 = 62;
+
+    let mut num = rand::random::<u64>();
+
+    for _ in 0..length {
+        id.push(BASE62_CHARS[(num % base) as usize] as char);
+        num /= base;
+    }
+
+    id.chars().rev().collect()
+}
+
+/// Macro to define a new id struct that can seamlessly be used in SQL queries and be used in Poem
+/// Json objects
+/// 
+/// # Arguments
+/// 
+/// - `$vis`: Visibility specifier for the generated identifier function.
+/// - `$struct`: The name of the struct for which the identifier is generated.
+/// - `$id_length`: The length of the identifier to be generated.
+/// - `$table_name`: The name of the database table to check for identifier uniqueness.
+/// 
+/// # Example
+/// 
+/// ```
+/// // Declare a new identifier type `UserId` with a length of 8 characters and a table name "users".
+/// id!(pub, UserId, 8, "users");
+/// ```
+/// 
 macro_rules! id {
-    ($vis:vis, $struct:ty, $id_length:expr, $select_stmnt:literal) => {
+    ($vis:vis, $struct:ident, $id_length:expr, $table_name:literal) => {
+        #[derive(poem_openapi::NewType, Clone, serde::Serialize, serde::Deserialize, sqlx::Encode, sqlx::Decode, sqlx::FromRow)]
+        $vis struct $struct(pub String);
+
+        id_generator!($vis, $struct, $id_length, $table_name);
+
+        id_conversions!($struct);
+    };
+}
+
+/// Macro to generate a new identifier for the given struct using a transaction.
+///
+/// # Arguments
+///
+/// - `$vis`: Visibility specifier for the generated identifier function.
+/// - `$struct`: The name of the struct for which the identifier is generated.
+/// - `$id_length`: The length of the identifier to be generated.
+/// - `$table_name`: The name of the database table to check for identifier uniqueness.
+///
+/// # Example
+/// ```
+/// // Generate a new `UserId` identifier using the provided database transaction.
+/// let new_user_id = UserId::generate(&mut transaction).await?;
+/// ```
+macro_rules! id_generator {
+    ($vis:vis, $struct:ident, $id_length:expr, $table_name:literal) => {
         impl $struct {
             $vis async fn generate(
                 executor: &mut sqlx::Transaction<'_, crate::database::Database>
-            ) -> Result<$struct, super::DatabaseError>  {
+            ) -> Result<$struct, sqlx::error::Error>  {
                 let mut retry_count = 0;
                 let length = $id_length;
 
@@ -17,27 +113,38 @@ macro_rules! id {
                 loop {
                     id = crate::models::id::generate_base62_id(length);
 
-                    let results = sqlx::query!($select_stmnt, id)
-                        .fetch_one(&mut **executor)
-                        .await?;
+                    let used = is_id_used($table_name, &id, executor).await?;
 
-                    let count = results.count;
-
-                    if !censor.check(&id) && count == 0 {
+                    if !censor.check(&id) && !used {
                         break;
                     }
                     
                     retry_count += 1;
                     if retry_count > ID_RETRY_COUNT {
-                        return Err(super::DatabaseError::RandomId);
+                        return Err(sqlx::error::Error::WorkerCrashed);
                     }
-
                 }
                 
                 Ok(Self(id))
             }
         }
+    };
+}
 
+/// Macro to provide conversions for the specified identifier type.
+///
+/// # Arguments
+///
+/// - `$struct`: The name of the struct representing the identifier.
+///
+/// # Example
+/// ```
+/// // Convert a `String` into a `UserId`.
+/// let user_id: UserId = "abcdef".to_string().into();
+/// ```
+/// 
+macro_rules! id_conversions {
+    ($struct:ident) => {
         impl sqlx::Type<crate::database::Database> for $struct {
             fn type_info() -> crate::database::TypeInfo {
                 <::std::primitive::str as ::sqlx::Type<sqlx::Sqlite>>::type_info()
@@ -56,105 +163,20 @@ macro_rules! id {
     };
 }
 
-const BASE62_CHARS: [u8; 62] =
-    *b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+id!(pub, UserId, 8, "users");
 
-fn generate_base62_id(length: usize) -> String {
-    let mut id = String::with_capacity(length);
-    let base: u64 = 62;
+id!(pub, LoginHistoryEntryId, 12, "login_history");
 
-    let mut num = rand::random::<u64>();
+id!(pub, LoginSessionId, 10, "login_history");
 
-    for _ in 0..length {
-        id.push(BASE62_CHARS[(num % base) as usize] as char);
-        num /= base;
-    }
+id!(pub, ProjectId, 8, "projects");
 
-    id.chars().rev().collect()
-}
+id!(pub, ProjectMemberId, 8, "project_members");
 
-#[derive(Clone, Debug, Serialize, Deserialize, sqlx::Encode, sqlx::Decode, sqlx::FromRow)]
-pub struct UserId(pub String);
+id!(pub, TaskGroupId, 10, "task_groups" );
 
-id!(
-    pub,
-    UserId,
-    8,
-    "SELECT COUNT(*) as count FROM users WHERE id = ?"
-);
+id!(pub, TaskId, 10, "tasks");
 
+id!(pub, SubTaskId, 12, "task_groups");
 
-#[derive(Clone, Debug, Serialize, Deserialize, sqlx::Encode, sqlx::Decode, sqlx::FromRow)]
-pub struct LoginHistoryEntryId(pub String);
-
-id!(
-    pub,
-    LoginHistoryEntryId,
-    12,
-    "SELECT COUNT(*) as count FROM login_history WHERE id = ?"
-);
-
-#[derive(Clone, Debug, Serialize, Deserialize, sqlx::Encode, sqlx::Decode, sqlx::FromRow)]
-pub struct LoginSessionId(pub String);
-
-id!(
-    pub,
-    LoginSessionId,
-    10,
-    "SELECT COUNT(*) as count FROM login_history WHERE id = ?"
-);
-
-
-#[derive(Clone, Debug, Serialize, Deserialize, sqlx::Encode, sqlx::Decode, sqlx::FromRow)]
-pub struct ProjectId(pub String);
-
-id!(
-    pub,
-    ProjectId,
-    8,
-    "SELECT COUNT(*) as count FROM projects WHERE id = ?"
-);
-
-
-#[derive(Clone, Debug, Serialize, Deserialize, sqlx::Encode, sqlx::Decode, sqlx::FromRow)]
-pub struct ProjectMemberId(pub String);
-
-id!(
-    pub,
-    ProjectMemberId,
-    8,
-    "SELECT COUNT(*) as count FROM project_members WHERE id = ?"
-);
-
-
-#[derive(Clone, Debug, Serialize, Deserialize, sqlx::Encode, sqlx::Decode, sqlx::FromRow)]
-pub struct TaskGroupId(pub String);
-
-id!(
-    pub,
-    TaskGroupId,
-    10,
-    "SELECT COUNT(*) as count FROM task_groups WHERE id = ?"
-);
-
-#[derive(Clone, Debug, Serialize, Deserialize, sqlx::Encode, sqlx::Decode, sqlx::FromRow)]
-pub struct TaskId(pub String);
-
-id!(
-    pub,
-    TaskId,
-    10,
-    "SELECT COUNT(*) as count FROM tasks WHERE id = ?"
-);
-
-
-#[derive(Clone, Debug, Serialize, Deserialize, sqlx::Encode, sqlx::Decode, sqlx::FromRow)]
-pub struct SubTaskId(pub String);
-
-id!(
-    pub,
-    SubTaskId,
-    12,
-    "SELECT COUNT(*) as count FROM task_groups WHERE id = ?"
-);
-
+id!(pub, AuditId, 12, "audits");
