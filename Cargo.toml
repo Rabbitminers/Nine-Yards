@@ -1,0 +1,8 @@
+[workspace]
+members = [
+    "nine-yards-api",
+    "nine-yards-database",
+    "nine-yards-models",
+    "nine-yards-auth",
+    "backend"
+]
