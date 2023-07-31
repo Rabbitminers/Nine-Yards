@@ -5,13 +5,6 @@ CREATE TABLE users (
 	password TEXT NOT NULL,
     email TEXT NOT NULL,
     icon_url TEXT,
-	login_session TEXT
-);
-
-CREATE TABLE login_history (
-    id TEXT PRIMARY KEY NOT NULL,
-    user_id TEXT REFERENCES users NOT NULL,
-    login_timestamp TEXT
 );
 
 CREATE TABLE project_members (
