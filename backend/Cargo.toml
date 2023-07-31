@@ -27,11 +27,18 @@ features = ["v4"]
 [dependencies]
 # Axum / Utoipa
 axum = { version = "0.6.19", features = ["headers"] }
+
 utoipa = { version = "3.4.3", features = ["axum_extras", "chrono"] }
 utoipa-swagger-ui = { version= "3.0.2", features = ["axum"] }
 
+tower-layer = "0.3.2"
+tower-service = "0.3.2"
+
+# Runtime
 tokio = { version = "1.17", features = ["macros", "rt-multi-thread"] }
 
+# Redis
+redis = { vesrion = "0.23.0", features = ["tokio-comp"] }
 
 # Serde
 serde = "1.0.123"
