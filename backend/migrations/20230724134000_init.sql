@@ -5,6 +5,7 @@ CREATE TABLE users (
 	password TEXT NOT NULL,
     email TEXT NOT NULL,
     icon_url TEXT,
+    login_session TEXT
 );
 
 CREATE TABLE project_members (
@@ -42,6 +43,15 @@ CREATE TABLE tasks (
     accent_colour TEXT NOT NULL,
     position INTEGER NOT NULL,
     created DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+
+CREATE TABLE task_edges (
+    parent_task TEXT REFERENCES tasks NOT NULL,
+    child_task TEXT REFERENCES tasks NOT NULL
+    project_id TEXT REFERENCES projects NOT NULL,
+    flow_type TEXT NOT NULL,
+    CONSTRAINT valid_edge CHECK (parent_task <> child_task)
+    CONSTRAINT overlap UNIQUE (parent_task, child_task)
 );
 
 CREATE TABLE sub_tasks (
