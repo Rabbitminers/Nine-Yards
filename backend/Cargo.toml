@@ -25,18 +25,15 @@ version = "1.4.1"
 features = ["v4"]
 
 [dependencies]
-# Axum / Utoipa
-axum = { version = "0.6.19", features = ["headers"] }
-axum-extra = { version = "0.7.5", features = ["cookie-private"]}
+# Actix / Utoipa
+actix-web = "4.3.1"
+actix-rt = "2.8.0"
+actix-cors = "0.6.4"
+actix-files = "0.6.2"
+actix-web-grants = "3.0.2"
 
-utoipa = { version = "3.4.3", features = ["axum_extras", "chrono"] }
-utoipa-swagger-ui = { version= "3.0.2", features = ["axum"] }
-
-tower-layer = "0.3.2"
-tower-service = "0.3.2"
-
-# Runtime
-tokio = { version = "1.17", features = ["macros", "rt-multi-thread"] }
+utoipa = { version = "3.4.3", features = ["actix_extras", "chrono"] }
+utoipa-swagger-ui = { version= "3.0.2", features = ["actix-web"] }
 
 # Serde
 serde = "1.0.123"
