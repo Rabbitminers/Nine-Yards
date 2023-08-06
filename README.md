@@ -99,8 +99,8 @@ As well as this, they offer splitting your resources between multiple instances,
 
 For contributors or anyone interrested in how Nine Yards works:
 
-- Frontend - [SvelteKit](https://nuxt.com/), [Svelte](https://vuejs.org/), [Tailwind](https://tailwindcss.com/)
-- Backend - [Rust](https://www.rust-lang.org/), [Poem](https://actix.rs/), [sqlx](https://github.com/launchbadge/sqlx)
+- Frontend - [SvelteKit](https://kit.svelte.dev/), [Svelte](https://svelte.dev/), [Tailwind](https://tailwindcss.com/)
+- Backend - [Rust](https://www.rust-lang.org/), [Actix Web](https://actix.rs/), [sqlx](https://github.com/launchbadge/sqlx)
 - Database - [Sqlite](https://www.sqlite.org/index.html) / [Postgres]("https://www.postgresql.org/")
 
 ---
