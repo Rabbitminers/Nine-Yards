@@ -75,7 +75,7 @@ fn generate_base62_id(length: usize) -> String {
 /// 
 macro_rules! id {
     ($vis:vis, $struct:ident, $id_length:expr, $table_name:literal) => {
-        #[derive(poem_openapi::NewType, Clone, serde::Serialize, serde::Deserialize, sqlx::Encode, sqlx::Decode, sqlx::FromRow)]
+        #[derive(Clone, serde::Serialize, serde::Deserialize, sqlx::Encode, sqlx::Decode, sqlx::FromRow)]
         $vis struct $struct(pub String);
 
         id_generator!($vis, $struct, $id_length, $table_name);
@@ -138,9 +138,16 @@ macro_rules! id_generator {
 /// - `$struct`: The name of the struct representing the identifier.
 ///
 /// # Example
-/// ```
+/// ```rust
 /// // Convert a `String` into a `UserId`.
-/// let user_id: UserId = "abcdef".to_string().into();
+/// sqlx::query_as!(
+///     UserId,
+///     SELECT id FROM users
+///     WHERE username = $1,
+///     username
+/// )
+/// .fetch_optional(executor)
+/// .await?;
 /// ```
 /// 
 macro_rules! id_conversions {
@@ -165,9 +172,7 @@ macro_rules! id_conversions {
 
 id!(pub, UserId, 8, "users");
 
-id!(pub, LoginHistoryEntryId, 12, "login_history");
-
-id!(pub, LoginSessionId, 10, "login_history");
+id!(pub, LoginSessionId, 12, "users");
 
 id!(pub, ProjectId, 8, "projects");
 
