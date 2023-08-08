@@ -1,10 +1,11 @@
-use std::{collections::HashMap, borrow::Cow};
-
-use actix_web::http::header::WWW_AUTHENTICATE;
-use actix_web::http::StatusCode;
-use actix_web::HttpResponse;
-
+use axum::body::{Bytes, Full, HttpBody};
+use axum::http::header::WWW_AUTHENTICATE;
+use axum::http::{HeaderMap, HeaderValue, Response, StatusCode};
+use axum::Json;
+use axum::response::IntoResponse;
 use sqlx::error::DatabaseError;
+use std::borrow::Cow;
+use std::collections::HashMap;
 
 /// A common error type that can be used throughout the API.
 ///
@@ -18,7 +19,7 @@ pub enum ApiError {
     // Return '401' Unauthorized, this is typically only
     // raised by middleware when a token is missing, expired,
     // malformed or otherwise invalid
-    #[error("authentication is required, please provide a bearer token")]
+    #[error("authentication is required, please provide a valid bearer token")]
     Unauthorized,
 
     // Return '403 Forbidden, for when the user's identity
@@ -73,6 +74,16 @@ pub enum ApiError {
     /// for security reasons.
     #[error("an internal server error occurred")]
     Anyhow(#[from] anyhow::Error),
+
+    /// Return '500 Internal Server error' without an explicit error
+    /// 
+    /// At some points the server may encounter a problem that prevents a valid
+    /// response but is not fatal and does not throw an explicit error. For 
+    /// example if the pool is missing or expired from the database and thus the
+    /// option in data is empty
+    /// 
+    #[error("an internal server error has occured")]
+    Internal(String)
 }
 
 impl ApiError {
@@ -96,38 +107,43 @@ impl ApiError {
 
         Self::UnprocessableEntity { errors: error_map }
     }
-}
 
-impl actix_web::ResponseError for ApiError {
     fn status_code(&self) -> StatusCode {
         match self {
             Self::Unauthorized => StatusCode::UNAUTHORIZED,
             Self::Forbidden => StatusCode::FORBIDDEN,
             Self::NotFound => StatusCode::NOT_FOUND,
             Self::UnprocessableEntity { .. } => StatusCode::UNPROCESSABLE_ENTITY,
-            Self::Sqlx(_) | Self::Anyhow(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            _ => StatusCode::INTERNAL_SERVER_ERROR, 
         }
     }
+}
 
-    fn error_response(&self) -> HttpResponse {
+impl IntoResponse for ApiError {
+    fn into_response(self) -> Response {
         match self {
            Self::UnprocessableEntity { errors } => {
-            #[derive(Serialize)]
+                #[derive(serde::Serialize)]
                 struct Errors {
                     errors: HashMap<Cow<'static, str>, Vec<Cow<'static, str>>>,
                 }
 
-                return HttpResponse::build(self.status_code()).json(Errors { errors })
+                return (StatusCode::UNPROCESSABLE_ENTITY, Json(Errors { errors })).into_response();
             },
 
             Self::Unauthorized => {
-                // Include the `WWW-Authenticate` challenge required in the specification
-                // for the `401 Unauthorized` response code:
-                // https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
-                //
-                return HttpResponse::build(self.status_code())
-                    .append_header(WWW_AUTHENTICATE)
-                    .json(self.to_string());
+                return (
+                    self.status_code(),
+                    // Include the `WWW-Authenticate` challenge required in the specification
+                    // for the `401 Unauthorized` response code:
+                    // https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+                    //
+                    [(WWW_AUTHENTICATE, HeaderValue::from_static("Token"))]
+                        .into_iter()
+                        .collect::<HeaderMap>(),
+                    self.to_string(),
+                )
+                    .into_response();
             }
 
 
@@ -139,11 +155,14 @@ impl actix_web::ResponseError for ApiError {
                 tracing::error!("Generic error: {:?}", e);
             }
 
+            Self::Internal(e) => {
+                tracing::error!("Internal error: {}", e)
+            }
 
             _ => ()
         };
 
-        HttpResponse::build(self.status_code()).json(self.to_string())
+        (self.status_code(), self.to_string()).into_response()
     }
 
 }
