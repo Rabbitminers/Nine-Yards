@@ -25,15 +25,17 @@ version = "1.4.1"
 features = ["v4"]
 
 [dependencies]
-# Actix / Utoipa
-actix-web = "4.3.1"
-actix-rt = "2.8.0"
-actix-cors = "0.6.4"
-actix-files = "0.6.2"
-actix-web-grants = "3.0.2"
+# Axum / Utoipa
+axum = { version = "0.6.20", features = ["tracing", "headers"] }
+axum-extra = { version = "0.7.7", features = ["typed-routing"] }
 
-utoipa = { version = "3.4.3", features = ["actix_extras", "chrono"] }
-utoipa-swagger-ui = { version= "3.0.2", features = ["actix-web"] }
+tokio = { version = "1.29.1", features = ["full"] }
+
+tower = "0.4.13"
+tower-http = { version = "0.4.2", features = ["trace", "cors", "auth"] } 
+
+utoipa = { version = "3.4.3", features = ["axum_extras", "chrono"] }
+utoipa-swagger-ui = { version= "3.0.2", features = ["axum"] }
 
 # Serde
 serde = "1.0.123"
