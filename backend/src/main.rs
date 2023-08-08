@@ -4,9 +4,9 @@ extern crate sqlx;
 #[macro_use]
 extern crate serde;
 
-use actix_web::{web, App};
+use axum::Router;
 use database::SqlPool;
-use utoipa_swagger_ui::SwaggerUi;
+use tower_http::{cors::{CorsLayer, Any}, trace::TraceLayer};
 
 pub mod database;
 pub mod models;
@@ -20,30 +20,24 @@ pub mod error;
 #[openapi(paths())]
 pub struct ApiDoc;
 
-#[actix_rt::main]
-async fn main() -> std::io::Result<()> {
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv::dotenv().expect("Failed to read .env file");
 
     let sql_pool: SqlPool = database::sql::connect().await?; 
 
-    actix_web::HttpServer::new(move || {
-        App::new()
-            .wrap(actix_cors::Cors::default()
-                .allow_any_origin()
-                .allow_any_header()
-                .allow_any_method()
-                .max_age(3600)
-                .send_wildcard()
-            )
-            .wrap(actix_web::middleware::Compress::default())
-            .app_data(web::Data::new(sql_pool.clone()))
-            .service(
-                SwaggerUi::new("/swagger-ui/{_:.*}")
-                    .url("/api-docs/openapi.json", ApiDoc::openapi())
-            )   
-            .configure(api::v1::config)
-    })
-    .bind("127.0.0.1:8000")
-    .run()
-    .await
+    let app = Router::new()
+        .layer(CorsLayer::default()
+            .allow_origin(Any)
+            .allow_headers(Any)
+            .allow_methods(Any)
+        )
+        .layer(TraceLayer::new_for_http())
+        .with_state(sql_pool);
+
+    axum::Server::bind(dotenv::var("BIND_ADDR").unwrap())
+        .serve(app.into_make_service())
+        .await?;
+
+    Ok(())
 }
