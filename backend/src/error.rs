@@ -1,30 +1,200 @@
-use actix_web::http::StatusCode;
+use std::{collections::HashMap, borrow::Cow};
 
+use actix_web::http::header::WWW_AUTHENTICATE;
+use actix_web::http::StatusCode;
+use actix_web::HttpResponse;
+
+use sqlx::error::DatabaseError;
+
+/// A common error type that can be used throughout the API.
+///
+/// Can be returned in a `Result` from an API handler function.
+///
+/// For convenience, this represents both API errors as well as internal recoverable errors,
+/// and maps them to appropriate status codes along with at least a minimally useful error
+/// message in a plain text body, or a JSON body in the case of `UnprocessableEntity`.
 #[derive(thiserror::Error, Debug)]
-pub enum ResponseError {
-    #[error("Environment Error")]
-    Env(#[from] dotenv::Error),
-    #[error("Missing token")]
-    MissingToken,
-    #[error("Invalid or expired token")]
-    InvalidToken,
-    #[error("Database error: {0}")]
-    SqlxDatabase(#[from] sqlx::Error),
-    #[error("Database error: {0}")]
-    Database(String),
-    #[error("Internal server error: {0}")]
-    Internal(#[from] anyhow::Error),
+pub enum ApiError {
+    // Return '401' Unauthorized, this is typically only
+    // raised by middleware when a token is missing, expired,
+    // malformed or otherwise invalid
+    #[error("authentication is required, please provide a bearer token")]
+    Unauthorized,
+
+    // Return '403 Forbidden, for when the user's identity
+    // is known but they are either not member of the project
+    // they are attempting to access or do not have permissions
+    // within the project to perform the action within the
+    // project
+    #[error("insufficient permissions to perform this action")]
+    Forbidden,
+
+    // Return '404' Not Found
+    #[error("resource not found")]
+    NotFound,
+
+    /// Return `422 Unprocessable Entity`
+    ///
+    /// This also serializes the `errors` map to JSON to satisfy the requirement for
+    /// `422 Unprocessable Entity` errors in the Realworld spec:
+    /// https://realworld-docs.netlify.app/docs/specs/backend-specs/error-handling
+    ///
+    #[error("error in the request body")]
+    UnprocessableEntity {
+        errors: HashMap<Cow<'static, str>, Vec<Cow<'static, str>>>,
+    },
+
+
+    /// Automatically return `500 Internal Server Error` on a `sqlx::Error`.
+    ///
+    /// Via the generated `From<sqlx::Error> for Error` impl,
+    /// this allows using `?` on database calls in handler functions without a manual mapping step.
+    ///
+    /// The actual error message isn't returned to the client for security reasons.
+    /// It should be logged instead.
+    ///
+    /// Note that this could also contain database constraint errors, which should usually
+    /// be transformed into client errors (e.g. `422 Unprocessable Entity` or `409 Conflict`).
+    /// See `ResultExt` below for a convenient way to do this.
+    #[error("an error occurred with the database")]
+    Sqlx(#[from] sqlx::Error),
+
+    /// Return `500 Internal Server Error` on a `anyhow::Error`.
+    ///
+    /// `anyhow::Error` is used in a few places to capture context and backtraces
+    /// on unrecoverable (but technically non-fatal) errors which could be highly useful for
+    /// debugging. We use it a lot in our code for background tasks or making API calls
+    /// to external services so we can use `.context()` to refine the logged error.
+    ///
+    /// Via the generated `From<anyhow::Error> for Error` impl, this allows the
+    /// use of `?` in handler functions to automatically convert `anyhow::Error` into a response.
+    ///
+    /// Like with `Error::Sqlx`, the actual error message is not returned to the client
+    /// for security reasons.
+    #[error("an internal server error occurred")]
+    Anyhow(#[from] anyhow::Error),
 }
 
-impl actix_web::ResponseError for ResponseError {
-    fn status_code(&self) -> actix_web::http::StatusCode {
-        match self {
-            ResponseError::Env(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            ResponseError::SqlxDatabase(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            ResponseError::Database(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            ResponseError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            ResponseError::MissingToken => StatusCode::UNAUTHORIZED,
-            ResponseError::InvalidToken => StatusCode::UNAUTHORIZED,
+impl ApiError {
+    /// Convenient constructor for `Error::UnprocessableEntity`.
+    ///
+    /// Multiple for the same key are collected into a list for that key.
+    ///
+    pub fn unprocessable_entity<K, V>(errors: impl IntoIterator<Item = (K, V)>) -> Self
+    where
+        K: Into<Cow<'static, str>>,
+        V: Into<Cow<'static, str>>,
+    {
+        let mut error_map = HashMap::new();
+
+        for (key, val) in errors {
+            error_map
+                .entry(key.into())
+                .or_insert_with(Vec::new)
+                .push(val.into());
         }
+
+        Self::UnprocessableEntity { errors: error_map }
+    }
+}
+
+impl actix_web::ResponseError for ApiError {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            Self::Unauthorized => StatusCode::UNAUTHORIZED,
+            Self::Forbidden => StatusCode::FORBIDDEN,
+            Self::NotFound => StatusCode::NOT_FOUND,
+            Self::UnprocessableEntity { .. } => StatusCode::UNPROCESSABLE_ENTITY,
+            Self::Sqlx(_) | Self::Anyhow(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+
+    fn error_response(&self) -> HttpResponse {
+        match self {
+           Self::UnprocessableEntity { errors } => {
+            #[derive(Serialize)]
+                struct Errors {
+                    errors: HashMap<Cow<'static, str>, Vec<Cow<'static, str>>>,
+                }
+
+                return HttpResponse::build(self.status_code()).json(Errors { errors })
+            },
+
+            Self::Unauthorized => {
+                // Include the `WWW-Authenticate` challenge required in the specification
+                // for the `401 Unauthorized` response code:
+                // https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+                //
+                return HttpResponse::build(self.status_code())
+                    .append_header(WWW_AUTHENTICATE)
+                    .json(self.to_string());
+            }
+
+
+            Self::Sqlx(ref e) => {
+                tracing::error!("SQLx error: {:?}", e);
+            }
+
+            Self::Anyhow(ref e) => {
+                tracing::error!("Generic error: {:?}", e);
+            }
+
+
+            _ => ()
+        };
+
+        HttpResponse::build(self.status_code()).json(self.to_string())
+    }
+
+}
+
+/// A little helper trait for more easily converting database constraint errors into API errors.
+///
+/// ```rust,ignore
+/// let user_id = sqlx::query_scalar!(
+///     r#"insert into "user" (username, email, password_hash) values ($1, $2, $3) returning user_id"#,
+///     username,
+///     email,
+///     password_hash
+/// )
+///     .fetch_one(&ctxt.db)
+///     .await
+///     .on_constraint("user_username_key", |_| Error::unprocessable_entity([("username", "already taken")]))?;
+/// ```
+///
+/// Something like this would ideally live in a crate if it made sense to author one,
+/// however its definition is tied pretty intimately to the `ResponseError` type, which is itself
+/// tied directly to application semantics.
+///
+/// To actually make this work in a generic context would make it quite a bit more complex,
+/// as you'd need an intermediate error type to represent either a mapped or an unmapped error,
+/// and even then it's not clear how to handle `?` in the unmapped case without more boilerplate.
+pub trait ResultExt<T> {
+    /// If `self` contains a SQLx database constraint error with the given name,
+    /// transform the error.
+    ///
+    /// Otherwise, the result is passed through unchanged.
+    fn on_constraint(
+        self,
+        name: &str,
+        f: impl FnOnce(Box<dyn DatabaseError>) -> ApiError,
+    ) -> Result<T, ApiError>;
+}
+
+impl<T, E> ResultExt<T> for Result<T, E>
+where
+    E: Into<ApiError>,
+{
+    fn on_constraint(
+        self,
+        name: &str,
+        map_err: impl FnOnce(Box<dyn DatabaseError>) -> ApiError,
+    ) -> Result<T, ApiError> {
+        self.map_err(|e| match e.into() {
+            ApiError::Sqlx(sqlx::Error::Database(dbe)) if dbe.constraint() == Some(name) => {
+                map_err(dbe)
+            }
+            e => e,
+        })
     }
 }
