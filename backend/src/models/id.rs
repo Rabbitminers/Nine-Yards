@@ -172,8 +172,6 @@ macro_rules! id_conversions {
 
 id!(pub, UserId, 8, "users");
 
-id!(pub, LoginSessionId, 12, "users");
-
 id!(pub, ProjectId, 8, "projects");
 
 id!(pub, ProjectMemberId, 8, "project_members");
