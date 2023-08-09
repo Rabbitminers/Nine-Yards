@@ -1,7 +1,7 @@
 use chrono::Utc;
-use jsonwebtoken::{TokenData, DecodingKey, Validation, Header, EncodingKey};
+use jsonwebtoken::{TokenData, DecodingKey, Validation, Header, EncodingKey, errors::Result};
 
-use super::{id::{UserId, LoginSessionId}, users::User};
+use super::{id::UserId, users::User};
 
 pub static KEY: [u8; 16] = *include_bytes!("../secret.key");
 static ONE_WEEK: i64 = 60 * 60 * 24 * 7; // in seconds
@@ -17,31 +17,26 @@ pub struct TokenClaims {
     pub exp: i64,
     // The user's id
     pub user_id: UserId,
-    // The user's login session
-    pub login_session: LoginSessionId,
 }
 
 impl Token {
     const COOKIE_NAME: &str = "AuthSession";
 
-    pub fn decode(
-        token: Token,
-    ) -> jsonwebtoken::errors::Result<TokenData<TokenClaims>> {
+    pub fn decode(&self) -> Result<TokenData<TokenClaims>> {
         jsonwebtoken::decode::<TokenClaims>(
-            &token.0,
+            &self.0,
             &DecodingKey::from_secret(&KEY),
             &Validation::default(),
         )
     }
 
-    pub fn encode(user: &User, session: LoginSessionId) -> Self {
+    pub fn encode(user: &User) -> Self {
         let now = Utc::now().timestamp_nanos() / 1_000_000_000; // nanosecond -> second
 
         let claims = TokenClaims {
             iat: now,
             exp: now + ONE_WEEK,
             user_id: user.id.clone(),
-            login_session: session,
         };
 
         let token = jsonwebtoken::encode(
@@ -51,5 +46,11 @@ impl Token {
         ).unwrap();
 
         Self(token)
+    }
+}
+
+impl From<String> for Token {
+    fn from(value: String) -> Self {
+        Self(value)
     }
 }
