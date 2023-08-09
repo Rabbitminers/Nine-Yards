@@ -49,36 +49,28 @@ git clone https://github.com/Rabbitminers/Nine-Yards
 cd Nine-Yards
 ```
 
-#### Building the frontend
+#### Building the project
 
 ```bash
-cd site
-pnpm i # Install packages for the project
+# This may take some time as all dependencies need to be downloaded and compiled
 
-# For seperate backend and frontend
-pnpm nuxt build # Can now be ran like so `node .output/server/index.mjs`
+# Build everything
+make build
 
 # or
 
-# For static hosting
-pnpm nuxi generate # (build files are moved for you)
+# Build only the frontend site
+make build-frontend
 
-# Return to repository root
-cd ..
+# Build only the backend
+make build-backend
 ```
 
-#### Building the backend
+### Running Nine Yards
 
 ```bash
-cd backend
-
-# For SQLite
-cargo build --release --features=sqlite
-
-# or
-
-# For Postgres
-cargo build --release --features=postgres
+# Make sure to configure your instance first
+make run
 ```
 
 ---
@@ -100,7 +92,7 @@ As well as this, they offer splitting your resources between multiple instances,
 For contributors or anyone interrested in how Nine Yards works:
 
 - Frontend - [SvelteKit](https://kit.svelte.dev/), [Svelte](https://svelte.dev/), [Tailwind](https://tailwindcss.com/)
-- Backend - [Rust](https://www.rust-lang.org/), [Actix Web](https://actix.rs/), [sqlx](https://github.com/launchbadge/sqlx)
+- Backend - [Rust](https://www.rust-lang.org/), [Axum](https://github.com/tokio-rs/axum), [sqlx](https://github.com/launchbadge/sqlx)
 - Database - [Sqlite](https://www.sqlite.org/index.html) / [Postgres]("https://www.postgresql.org/")
 
 ---
@@ -116,7 +108,7 @@ Have an issue, a feature requst or just want to ask a question? You can contact 
 [1]: https://discordapp.com/api/guilds/1069326955742244884/widget.png?style=banner2
 [2]: https://discord.gg/GJsQadv9Mc
 
-You can also find documentation of the Nine Yards API [here](api_docs.md).
+You can also find documentation of the Nine Yards API [here](api_docs.md) or if enabled OpenApi docs will be avaialabe.
 
 ---
 
