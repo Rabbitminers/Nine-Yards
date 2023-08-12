@@ -1,3 +1,7 @@
+use axum::async_trait;
+
+use crate::{error::ApiError, database::Database};
+
 const ID_RETRY_COUNT: usize = 20; 
 
 const BASE62_CHARS: [u8; 62] =
@@ -17,8 +21,8 @@ const BASE62_CHARS: [u8; 62] =
 async fn is_id_used(
     table_name: &str,
     id: &str, 
-    transaction: &mut sqlx::Transaction<'_, crate::database::Database>
-) -> Result<bool, sqlx::error::Error> {
+    transaction: &mut sqlx::Transaction<'_, Database>,
+) -> Result<bool, sqlx::error::Error> { 
     let result = sqlx::query!(
         "
         SELECT COUNT(*) 
@@ -56,6 +60,10 @@ fn generate_base62_id(length: usize) -> String {
     id.chars().rev().collect()
 }
 
+pub trait DatabaseId {
+    fn table_name() -> &'static str;
+}
+
 /// Macro to define a new id struct that can seamlessly be used in SQL queries and be used in Poem
 /// Json objects
 /// 
@@ -76,6 +84,7 @@ fn generate_base62_id(length: usize) -> String {
 macro_rules! id {
     ($vis:vis, $struct:ident, $id_length:expr, $table_name:literal) => {
         #[derive(Clone, serde::Serialize, serde::Deserialize, sqlx::Encode, sqlx::Decode, sqlx::FromRow)]
+        #[sqlx(transparent)]
         $vis struct $struct(pub String);
 
         id_generator!($vis, $struct, $id_length, $table_name);
@@ -101,9 +110,12 @@ macro_rules! id {
 macro_rules! id_generator {
     ($vis:vis, $struct:ident, $id_length:expr, $table_name:literal) => {
         impl $struct {
+            /// Although this only ever reads from the database no ids should
+            /// be generated outside of endpoints where the database is written
+            /// to and therefore should be ran on a transaction
             $vis async fn generate(
-                executor: &mut sqlx::Transaction<'_, crate::database::Database>
-            ) -> Result<$struct, sqlx::error::Error>  {
+                transaction: &mut sqlx::Transaction<'_, Database>,
+            ) -> Result<Self, sqlx::error::Error> {
                 let mut retry_count = 0;
                 let length = $id_length;
 
@@ -113,7 +125,7 @@ macro_rules! id_generator {
                 loop {
                     id = crate::models::id::generate_base62_id(length);
 
-                    let used = is_id_used($table_name, &id, executor).await?;
+                    let used = is_id_used($table_name, &id, &mut *transaction).await?;
 
                     if !censor.check(&id) && !used {
                         break;
@@ -128,7 +140,13 @@ macro_rules! id_generator {
                 Ok(Self(id))
             }
         }
-    };
+
+        impl crate::models::id::DatabaseId for $struct {
+            fn table_name() -> &'static str {
+                $table_name
+            }
+        }
+    }
 }
 
 /// Macro to provide conversions for the specified identifier type.
