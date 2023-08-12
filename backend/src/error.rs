@@ -1,8 +1,8 @@
-use axum::body::{Bytes, Full, HttpBody};
+use axum::body::HttpBody;
 use axum::http::header::WWW_AUTHENTICATE;
-use axum::http::{HeaderMap, HeaderValue, Response, StatusCode};
+use axum::http::{HeaderMap, HeaderValue, StatusCode};
+use axum::response::{IntoResponse, Response};
 use axum::Json;
-use axum::response::IntoResponse;
 use sqlx::error::DatabaseError;
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -16,6 +16,10 @@ use std::collections::HashMap;
 /// message in a plain text body, or a JSON body in the case of `UnprocessableEntity`.
 #[derive(thiserror::Error, Debug)]
 pub enum ApiError {
+    // Return '400 Bad Request'
+    #[error("bad request")]
+    BadRequest,
+
     // Return '401' Unauthorized, this is typically only
     // raised by middleware when a token is missing, expired,
     // malformed or otherwise invalid
@@ -110,6 +114,7 @@ impl ApiError {
 
     fn status_code(&self) -> StatusCode {
         match self {
+            Self::BadRequest => StatusCode::BAD_REQUEST,
             Self::Unauthorized => StatusCode::UNAUTHORIZED,
             Self::Forbidden => StatusCode::FORBIDDEN,
             Self::NotFound => StatusCode::NOT_FOUND,
