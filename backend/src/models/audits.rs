@@ -1,11 +1,10 @@
 use chrono::{NaiveDateTime, Utc};
-use poem_openapi::Object;
 
 use crate::database::Database;
 
 use super::{id::{ProjectMemberId, ProjectId, AuditId}, projects::ProjectMember};
 
-#[derive(Object, Serialize)]
+#[derive(Serialize)]
 pub struct Audit {
     // The audit's id
     pub id: AuditId,
