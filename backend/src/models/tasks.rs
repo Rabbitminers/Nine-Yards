@@ -1,12 +1,11 @@
 use chrono::{NaiveDateTime, Utc};
 use futures::TryStreamExt;
-use validator::Validate;
 
-use crate::{database::Database, error};
+use crate::database::Database;
 
 use super::id::{TaskGroupId, ProjectId, TaskId, ProjectMemberId, SubTaskId};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize)]
 pub struct TaskGroup {
     // The task group's id (unique)
     pub id: TaskGroupId,
@@ -18,10 +17,9 @@ pub struct TaskGroup {
     pub position: i64 // Got to have room for your 9223372036854775807 task groups!
 }
 
-#[derive(Serialize, Deserialize, Validate)]
+#[derive(Deserialize)]
 pub struct TaskGroupBuilder {
     // The task group's name (3 -> 30 characters)
-    #[validate(length(min = 3, max = 30))]
     pub name: String,
 }
 
@@ -36,20 +34,20 @@ impl TaskGroup {
     ///
     /// # Returns
     ///
-    /// This method returns `Result<Self, error::ApiError>`, where:
+    /// This method returns `Result<Self, sqlx::error::Error>`, where:
     /// - `Ok(group)` is returned with the newly created `TaskGroup` instance if the insertion is successful.
-    /// - An `error::ApiError` is returned if there is an error executing the database query or generating the task group ID.
+    /// - An `sqlx::error::Error` is returned if there is an error executing the database query or generating the task group ID.
     ///
     pub async fn create(
         form: TaskGroupBuilder,
         project_id: ProjectId,
         transaction: &mut sqlx::Transaction<'_, Database>,
-    ) -> Result<Self, error::ApiError> {
+    ) -> Result<Self, sqlx::error::Error> {
         let id = TaskGroupId::generate(&mut *transaction).await?;
 
         let position = sqlx::query!(
             "
-            SELECT COALESCE(MAX(position), 0) + 1 
+            SELECT COALESCE(MAX(position), 0) + 1
             AS next_available_position
             FROM task_groups
             WHERE project_id = $1
@@ -80,14 +78,14 @@ impl TaskGroup {
     ///
     /// # Returns
     ///
-    /// This method returns `Result<(), error::ApiError>`, where:
+    /// This method returns `Result<(), sqlx::error::Error>`, where:
     /// - `Ok(())` is returned if the removal is successful and the task group is deleted from the database.
-    /// - An `error::ApiError` is returned if there is an error executing the database query.
+    /// - An `sqlx::error::Error` is returned if there is an error executing the database query.
     ///
     pub async fn remove(
         &self, // Take self to prevent double get
         transaction: &mut sqlx::Transaction<'_, Database>,
-    ) -> Result<(), error::ApiError> {
+    ) -> Result<(), sqlx::error::Error> {
         // TODO: Remove associated sub-tasks
 
         // Remove associated tasks
@@ -265,7 +263,7 @@ impl TaskGroup {
     }
 }
 
-#[derive(Serialize, Validate)]
+#[derive(Serialize)]
 pub struct Task {
     // The task's id (unique)
     pub id: TaskId,
@@ -274,7 +272,6 @@ pub struct Task {
     // The parent task group's id
     pub task_group_id: TaskGroupId,
     // The task's name (3 -> 30 characters)
-    #[validate(length(min = 3, max = 30))]
     pub name: String,
     // The task's description
     pub information: Option<String>,
@@ -293,10 +290,9 @@ pub struct Task {
 }
 
 // TODO: Implement hex code validators
-#[derive(Deserialize, Validate)]
+#[derive(Deserialize)]
 pub struct TaskBuilder {
     // The name of the project (3 -> 30 characters)
-    #[validate(length(min = 3, max = 30))]
     pub name: String,
     // The task's primary colour (hex) - background
     pub primary_colour: String,
@@ -304,7 +300,7 @@ pub struct TaskBuilder {
     pub accent_colour: String,
 }
 
-#[derive(Serialize, Validate)]
+#[derive(Serialize)]
 pub struct FullTask {
     // The task
     pub task: Task,
@@ -325,9 +321,9 @@ impl Task {
     ///
     /// # Returns
     ///
-    /// This method returns `Result<Task, error::ApiError>`, where:
+    /// This method returns `Result<Task, sqlx::error::Error>`, where:
     /// - `Ok(task)` is returned with the newly created `Task` instance if the insertion is successful.
-    /// - An `error::ApiError` is returned if there is an error executing the database query or generating the task ID.
+    /// - An `sqlx::error::Error` is returned if there is an error executing the database query or generating the task ID.
     ///
     pub async fn create(
         task_group_id: TaskGroupId,
@@ -335,7 +331,7 @@ impl Task {
         creator: ProjectMemberId, // Assume the membership was collected from the group id
         form: TaskBuilder,
         transaction: &mut sqlx::Transaction<'_, Database>,
-    ) -> Result<Task, error::ApiError> {
+    ) -> Result<Task, sqlx::error::Error> {
         let id = TaskId::generate(&mut *transaction).await?;
 
         let position: i64 = sqlx::query!(
@@ -380,14 +376,14 @@ impl Task {
     ///
     /// # Returns
     ///
-    /// This method returns `Result<(), error::ApiError>`, where:
+    /// This method returns `Result<(), sqlx::error::Error>`, where:
     /// - `Ok(())` is returned if the removal is successful and the task is deleted from the database.
-    /// - An `error::ApiError` is returned if there is an error executing the database query.
+    /// - An `sqlx::error::Error` is returned if there is an error executing the database query.
     ///
     pub async fn remove(
         &self,
         transaction: &mut sqlx::Transaction<'_, Database>,
-    ) -> Result<(), error::ApiError> {
+    ) -> Result<(), sqlx::error::Error> {
         // Remove the associated sub-tasks
         sqlx::query!(
             "
@@ -482,7 +478,7 @@ impl Task {
     /// - `Ok(None)`: If no task is found with the specified `TaskGroupId`.
     /// - `Err`: If an error occurs during the retrieval.
     pub async fn get<'a, E>(
-        id: TaskGroupId,
+        id: TaskId,
         executor: E,
     ) -> Result<Option<Self>, sqlx::error::Error> 
     where
@@ -517,7 +513,7 @@ impl Task {
     /// - `Ok(None)`: If no task is found with the specified `TaskGroupId`.
     /// - `Err`: If an error occurs during the retrieval.
     pub async fn get_full<'a, E>(
-        id: TaskGroupId,
+        id: TaskId,
         executor: E,
     ) -> Result<Option<FullTask>, sqlx::error::Error> 
     where
@@ -661,7 +657,7 @@ impl Task {
     }
 }
 
-#[derive(Serialize, Validate)]
+#[derive(Serialize)]
 pub struct SubTask {
     // The sub-task's id (unique)
     pub id: SubTaskId,
@@ -681,10 +677,9 @@ pub struct SubTask {
     pub completed: bool
 }
 
-#[derive(Serialize, Deserialize, Validate)]
+#[derive(Deserialize)]
 pub struct SubTaskBuilder {
     // The sub-task's description (0 -> 90 chars)
-    #[validate(length(min = 3, max = 90))]
     pub body: String,
 }
 
@@ -700,16 +695,16 @@ impl SubTask {
     ///
     /// # Returns
     ///
-    /// This function returns `Result<Self, error::ApiError>`.
+    /// This function returns `Result<Self, sqlx::error::Error>`.
     ///
     /// - `Ok(sub_task)`: The created `SubTask` object if the insertion is successful.
-    /// - `Err`: If an error occurs during the creation or insertion process, `error::ApiError` will be returned.
+    /// - `Err`: If an error occurs during the creation or insertion process, `sqlx::error::Error` will be returned.
     pub async fn create(
         task_id: TaskId,
         project_id: ProjectId, // Assume the project was collected from the task id
         form: SubTaskBuilder,
         transaction: &mut sqlx::Transaction<'_, Database>,
-    ) -> Result<Self, error::ApiError> {
+    ) -> Result<Self, sqlx::error::Error> {
         let id = SubTaskId::generate(&mut *transaction).await?;
 
         let position = sqlx::query!(
@@ -749,14 +744,14 @@ impl SubTask {
     ///
     /// # Returns
     ///
-    /// This function returns `Result<(), error::ApiError>`.
+    /// This function returns `Result<(), sqlx::error::Error>`.
     ///
     /// - `Ok(())`: If the sub-task is successfully removed from the database.
-    /// - `Err`: If an error occurs during the removal process, `error::ApiError` will be returned.
+    /// - `Err`: If an error occurs during the removal process, `sqlx::error::Error` will be returned.
     pub async fn remove(
         &self,
         transaction: &mut sqlx::Transaction<'_, Database>,
-    ) -> Result<(), error::ApiError> {
+    ) -> Result<(), sqlx::error::Error> {
         sqlx::query!(
             "
             DELETE FROM sub_tasks
