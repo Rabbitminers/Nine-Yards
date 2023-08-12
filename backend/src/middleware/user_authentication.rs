@@ -1,5 +1,6 @@
-use axum::http::{Request, Response};
-use axum::body::Body;
+use axum::body::BoxBody;
+use axum::http::{Request, Response, header};
+use axum::response::IntoResponse;
 use futures_util::future::BoxFuture;
 use tower_http::auth::AsyncAuthorizeRequest;
 
@@ -13,19 +14,20 @@ impl <B> AsyncAuthorizeRequest<B> for UserAuthenticationLayer
 where   
     B: Send + Sync + 'static
 {
-    type RequestBody = B;
-    type ResponseBody = Body;
-    type Future = BoxFuture<'static, Result<Request<B>, Response<Self::ResponseBody>>>;
+	type RequestBody = B;
+	type ResponseBody = BoxBody;
+	type Future = BoxFuture<'static, Result<Request<B>, Response<Self::ResponseBody>>>;
 
     fn authorize(&mut self, request: Request<B>) -> Self::Future {
         Box::pin(async {
-            let token: Token = request.headers()
-                .get("Authorization")
+            let token = request.headers()
+                .get(header::AUTHORIZATION)
                 .map(|v| v.to_str().unwrap().to_string())
-                .ok_or(ApiError::Unauthorized)?;
+                .map(|t| Token(t))
+                .ok_or(ApiError::Unauthorized.into_response())?;
 
             let claims = token.decode()
-                .map_err(|_| ApiError::Unauthorized)?.claims;
+                .map_err(|_| ApiError::Unauthorized.into_response())?.claims;
 
             request.extensions().insert(claims.user_id);
 
