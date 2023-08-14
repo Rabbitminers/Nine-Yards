@@ -4,13 +4,11 @@ extern crate sqlx;
 #[macro_use]
 extern crate serde;
 
-use std::{time::Duration, net::SocketAddr};
+use std::time::Duration;
 
 use axum::Router;
 use axum::http::{Method, header};
-use axum::extract::FromRef;
 use database::SqlPool;
-use tower_http::add_extension::AddExtensionLayer;
 use tower_http::cors::{CorsLayer, Any};
 use tower_http::trace::TraceLayer;
 use utoipa::OpenApi;
@@ -27,14 +25,16 @@ pub mod error;
 #[openapi(paths())]
 pub struct ApiDoc;
 
-#[derive(Clone, FromRef)]
-pub struct AppState {
-    pub pool: SqlPool,
+#[derive(Clone)]
+pub struct ApiContext {
+    pool: SqlPool
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv::dotenv().expect("Failed to read .env file");
+
+    tracing_subscriber::fmt::init();
 
     let pool: SqlPool = database::sql::connect().await?; 
 
@@ -55,13 +55,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .allow_origin(Any)
             .max_age(Duration::from_secs(86400))
         )
-        .layer(AddExtensionLayer::new(pool))
         .layer(TraceLayer::new_for_http())
-        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()));
-        
-    let socket_addr = SocketAddr::from(([127, 0, 0, 1], 3000));
+        .nest("/api/v1", api::v1::configure())
+        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
+        .with_state(ApiContext { pool });
 
-    axum::Server::bind(&socket_addr)
+    axum::Server::bind(&"0.0.0.0:3000".parse()?)
         .serve(app.into_make_service())
         .await?;
 

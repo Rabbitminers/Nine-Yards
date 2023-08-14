@@ -1,21 +1,21 @@
-use axum::extract::Path;
+use axum::extract::{Path, State};
 use axum::routing::{get, post};
-use axum::{Extension, Json, Router};
+use axum::{Json, Router};
 
+use crate::ApiContext;
 use crate::error::ApiError;
 use crate::models::id::UserId;
 use crate::models::tokens::Token;
 use crate::models::users::{User, Login, Register};
-use crate::database::SqlPool;
 use crate::response::Result;
 
 /// Create a router to be nested on the main api router with
 /// endpoints for fetching, registering and authenticating users.
 /// 
-pub fn configure() -> Router {
+pub fn configure() -> Router<ApiContext> {
     Router::new()
         .route("/users", get(get_current_user))
-        .route("/users/{id}", get(get_user_by_id))
+        .route("/users/:id", get(get_user_by_id))
         .route("/users/register", post(register))
         .route("/users/login", post(login))
 }
@@ -40,10 +40,10 @@ pub fn configure() -> Router {
     security(("Bearer" = [])),
 )]
 async fn get_current_user(
-    Extension(pool): Extension<SqlPool>,
+    State(ctx): State<ApiContext>,
     user_id: UserId,
 ) -> Result<Json<User>> {
-    User::get(user_id, &pool)
+    User::get(user_id, &ctx.pool)
         .await?
         .ok_or(ApiError::Unauthorized)
         .map(|user| Json(user))
@@ -71,10 +71,10 @@ async fn get_current_user(
     security((), ("Bearer" = [])),
 )]
 async fn get_user_by_id(
-    Extension(pool): Extension<SqlPool>,
+    State(ctx): State<ApiContext>,
     Path(user_id): Path<UserId>,
 ) -> Result<Json<User>> {
-    User::get(user_id, &pool)
+    User::get(user_id, &ctx.pool)
         .await?
         .ok_or(ApiError::NotFound)
         .map(|user| Json(user))
@@ -103,10 +103,10 @@ pub struct AuthenticatedUser {
     )
 )]
 async fn register(
-    Extension(pool): Extension<SqlPool>,
+    State(ctx): State<ApiContext>,
     Json(form): Json<Register>,
 ) -> Result<Json<AuthenticatedUser>> {
-    let mut transaction = pool.begin().await?;
+    let mut transaction = ctx.pool.begin().await?;
 
     let user = User::register(form, &mut transaction).await?;
     transaction.commit().await?;    
@@ -137,10 +137,10 @@ async fn register(
     )
 )]
 async fn login(
-    Extension(pool): Extension<SqlPool>,
+    State(ctx): State<ApiContext>,
     Json(form): Json<Login>,
 ) -> Result<Json<AuthenticatedUser>> {
-    let mut transaction = pool.begin().await?;
+    let mut transaction = ctx.pool.begin().await?;
 
     let user = User::login(form, &mut transaction).await?;
     transaction.commit().await?;
