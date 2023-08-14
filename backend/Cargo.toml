@@ -26,13 +26,13 @@ features = ["v4"]
 
 [dependencies]
 # Axum / Utoipa
-axum = { version = "0.6.20", features = ["tracing", "headers"] }
+axum = { version = "0.6.20", features = ["tracing", "headers", "macros"] }
 axum-extra = { version = "0.7.7", features = ["typed-routing"] }
 
 tokio = { version = "1.29.1", features = ["full"] }
 
 tower = "0.4.13"
-tower-http = { version = "0.4.2", features = ["trace", "cors", "auth"] } 
+tower-http = { version = "0.4.3", features = ["trace", "cors", "auth", "add-extension"] } 
 
 utoipa = { version = "3.4.3", features = ["axum_extras", "chrono"] }
 utoipa-swagger-ui = { version= "3.0.2", features = ["axum"] }
@@ -53,6 +53,7 @@ nanoid = "0.4.0"
 rand = "0.8.5"
 color-eyre = "0.6.2"
 tracing = "0.1.37"
+tracing-subscriber = "0.3.17"
 bitflags = { version = "2.3.3", features = ["serde"] }
 dotenv = "0.15.0"
 thiserror = "1.0.38"
