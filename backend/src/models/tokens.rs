@@ -1,7 +1,7 @@
 use chrono::Utc;
 use jsonwebtoken::{TokenData, DecodingKey, Validation, Header, EncodingKey, errors::Result};
 
-use super::{id::UserId, users::User};
+use super::users::User;
 
 pub static KEY: [u8; 16] = *include_bytes!("../secret.key");
 static ONE_WEEK: i64 = 60 * 60 * 24 * 7; // in seconds
@@ -16,12 +16,10 @@ pub struct TokenClaims {
     // The time the token will expire (issue time + one week)
     pub exp: i64,
     // The user's id
-    pub user_id: UserId,
+    pub user_id: String,
 }
 
 impl Token {
-    const COOKIE_NAME: &str = "AuthSession";
-
     pub fn decode(&self) -> Result<TokenData<TokenClaims>> {
         jsonwebtoken::decode::<TokenClaims>(
             &self.0,
@@ -36,7 +34,7 @@ impl Token {
         let claims = TokenClaims {
             iat: now,
             exp: now + ONE_WEEK,
-            user_id: user.id.clone(),
+            user_id: user.id.0.clone(),
         };
 
         let token = jsonwebtoken::encode(
