@@ -1,4 +1,3 @@
-use axum::body::HttpBody;
 use axum::http::header::WWW_AUTHENTICATE;
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
@@ -160,7 +159,7 @@ impl IntoResponse for ApiError {
                 tracing::error!("Generic error: {:?}", e);
             }
 
-            Self::Internal(e) => {
+            Self::Internal(ref e) => {
                 tracing::error!("Internal error: {}", e)
             }
 
