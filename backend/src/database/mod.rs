@@ -1,4 +1,3 @@
-pub mod redis;
 pub mod sql;
 
 #[cfg(any(feature = "sqlite"))]

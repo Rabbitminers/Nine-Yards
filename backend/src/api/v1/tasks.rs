@@ -1,8 +1,8 @@
 use axum::{Router, Json, Extension};
 use axum::routing::get;
-use axum::extract::Path;
+use axum::extract::{Path, State};
 
-use crate::database::SqlPool;
+use crate::ApiContext;
 use crate::error::ApiError;
 use crate::middleware::extractors::Membership;
 use crate::models::id::TaskId;
@@ -13,14 +13,14 @@ use crate::response::Result;
 /// Create a router to be nested on the main api router with
 /// endpoints for task item endpoints and generic sub-task routes
 /// 
-pub fn configure() -> Router {
+pub fn configure() -> Router<ApiContext> {
     Router::new()
-        .route("/tasks/{id}", 
+        .route("/tasks/:id", 
              get(get_task)
             .put(edit_task)
             .delete(remove_task)
         )
-        .route("/tasks/{id}/sub-tasks", 
+        .route("/tasks/:id/sub-tasks", 
             get(get_sub_tasks)
             .post(create_sub_task)
         )
@@ -50,11 +50,11 @@ pub fn configure() -> Router {
     security(("Bearer" = [])),
 )]
 async fn get_task(
-    Extension(pool): Extension<SqlPool>,
+    State(ctx): State<ApiContext>,
     Path(id): Path<TaskId>,
     _membership: Membership<TaskId>
 ) -> Result<Json<FullTask>> {
-    Task::get_full(id, &pool)
+    Task::get_full(id, &ctx.pool)
         .await?
         .ok_or(ApiError::NotFound)
         .map(|task| Json(task))
@@ -89,12 +89,12 @@ async fn get_task(
     security(("Bearer" = [])),
 )]
 async fn edit_task(
-    Extension(pool): Extension<SqlPool>,
+    State(ctx): State<ApiContext>,
     Path(id): Path<TaskId>,
     Membership{ membership, .. }: Membership<TaskId>,
     Json(form): Json<EditTask>,
 ) -> Result<Json<Task>> {
-    let mut transaction = pool.begin().await?;
+    let mut transaction = ctx.pool.begin().await?;
 
     if !membership.permissions.contains(Permissions::MANAGE_TASKS) {
         return Err(ApiError::Forbidden);
@@ -138,11 +138,11 @@ async fn edit_task(
     security(("Bearer" = [])),
 )]
 async fn remove_task(
-    Extension(pool): Extension<SqlPool>,
+    State(ctx): State<ApiContext>,
     Path(id): Path<TaskId>,
     Membership{ membership, .. }: Membership<TaskId>,
 ) -> Result<()> {
-    let mut transaction = pool.begin().await?;
+    let mut transaction = ctx.pool.begin().await?;
 
     if !membership.permissions.contains(Permissions::MANAGE_TASKS) {
         return Err(ApiError::Forbidden);
@@ -180,11 +180,11 @@ async fn remove_task(
     security(("Bearer" = [])),
 )]
 async fn get_sub_tasks(
-    Extension(pool): Extension<SqlPool>,
+    State(ctx): State<ApiContext>,
     Path(id): Path<TaskId>,
     _membership: Membership<TaskId>
 ) -> Result<Json<Vec<SubTask>>> {
-    SubTask::get_from_task(id, &pool)
+    SubTask::get_from_task(id, &ctx.pool)
         .await
         .map(|sub_tasks| Json(sub_tasks))
         .map_err(|error| error.into())
@@ -218,12 +218,12 @@ async fn get_sub_tasks(
     security(("Bearer" = [])),
 )]
 async fn create_sub_task(
-    Extension(pool): Extension<SqlPool>,
+    State(ctx): State<ApiContext>,
     Path(id): Path<TaskId>,
     Membership{ membership, .. }: Membership<TaskId>,
     Json(form): Json<SubTaskBuilder>,
 ) -> Result<Json<SubTask>> {
-    let mut transaction = pool.begin().await?;
+    let mut transaction = ctx.pool.begin().await?;
 
     if !membership.permissions.contains(Permissions::MANAGE_TASKS) {
         return Err(ApiError::Forbidden);
