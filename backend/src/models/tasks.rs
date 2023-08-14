@@ -308,6 +308,24 @@ pub struct FullTask {
     pub sub_tasks: Vec<SubTask>
 }
 
+#[derive(Deserialize)]
+pub struct EditTask {
+    // The new task group (must also have new position)
+    pub task_group: Option<TaskGroupId>,
+    // The updated task name
+    pub name: Option<String>,
+    // The updated task description
+    pub information: Option<String>,
+    // The updated due date, must be in the future
+    pub due: Option<NaiveDateTime>,
+    // The tasks new primary colour (hex)
+    pub primary_colour: Option<String>,
+    // The tasks new accent colour (hex)
+    pub accent_colour: Option<String>,
+    // The tasks new position
+    pub position: Option<i64>
+}
+
 impl Task {
     /// Creates a new `Task` and inserts it into the `tasks` table in the database.
     ///
@@ -366,6 +384,54 @@ impl Task {
         task.insert(&mut *transaction).await?;
 
         Ok(task)
+    }
+
+    pub async fn edit(
+        task_id: TaskId,
+        form: EditTask,
+        transaction: &mut sqlx::Transaction<'_, Database>,
+    ) -> Result<(), sqlx::error::Error> {
+        sqlx::query!(
+            "
+            UPDATE tasks
+            SET position = position + 1
+            WHERE position >= $1
+            AND task_group_id = coalesce($2, task_group_id)
+            ",
+            form.position,
+            form.task_group,
+        )
+        .execute(&mut **transaction)
+        .await?;
+
+        sqlx::query!(
+            // Ideally we would use the WITH ... AS ... syntax to avoid
+            // the need for an additional select statement but it is
+            // not support in SQLite
+            "
+            UPDATE tasks
+            SET task_group_id = coalesce($1, task_group_id),
+                name = coalesce($2, name),
+                information = coalesce($3, information),
+                due = coalesce($4, due),
+                primary_colour = coalesce($5, primary_colour),
+                accent_colour = coalesce($6, accent_colour),
+                position = coalesce($7, position)
+            WHERE id = $8
+            ",
+            form.task_group,
+            form.name,
+            form.information,
+            form.due,
+            form.primary_colour,
+            form.accent_colour,
+            form.position,
+            task_id,
+        )
+        .execute(&mut **transaction)
+        .await?;
+
+        Ok(())
     }
 
     /// Removes a `Task` from the database along with its associated sub-tasks.
