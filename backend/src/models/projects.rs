@@ -558,6 +558,30 @@ impl ProjectMember {
     ///
     pub async fn get_from_user<'a, E>(
         user_id: UserId,
+        project_id: ProjectId,
+        executor: E,
+    ) -> Result<Option<Self>, sqlx::error::Error>
+    where
+        E: sqlx::Executor<'a, Database = Database>
+    {
+        sqlx::query_as!(
+            ProjectMember,
+            "
+            SELECT id, project_id, user_id,
+                   permissions, accepted
+            FROM project_members
+            WHERE user_id = $1
+            AND project_id = $2
+            ",
+            user_id,
+            project_id
+        )
+        .fetch_optional(executor)
+        .await
+    }
+    
+    pub async fn get_many_from_user<'a, E>(
+        user_id: UserId,
         executor: E,
     ) -> Result<Vec<Self>, sqlx::error::Error>
     where
