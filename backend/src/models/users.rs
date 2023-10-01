@@ -294,7 +294,7 @@ impl User {
         sqlx::query!(
             "
             DELETE FROM notifications
-            WHERE recipient = $1
+            WHERE user_id = $1
             ",
             self.id
         )
