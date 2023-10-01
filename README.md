@@ -108,7 +108,7 @@ Have an issue, a feature requst or just want to ask a question? You can contact 
 [1]: https://discordapp.com/api/guilds/1069326955742244884/widget.png?style=banner2
 [2]: https://discord.gg/GJsQadv9Mc
 
-You can also find documentation of the Nine Yards API [here](api_docs.md) or if enabled OpenApi docs will be avaialabe.
+You can also find documentation of the Nine Yards API [here](api_docs.md) or if enabled OpenApi docs will be avaialabe through swagger ui.
 
 ---
 
