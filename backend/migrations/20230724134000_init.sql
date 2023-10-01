@@ -1,10 +1,10 @@
--- Add migration script here
 CREATE TABLE users (
     id TEXT PRIMARY KEY NOT NULL,
-    username TEXT NOT NULL,
+    username TEXT NOT NULL UNIQUE,
 	password TEXT NOT NULL,
-    email TEXT NOT NULL,
-    icon_url TEXT
+    email TEXT NOT NULL UNIQUE,
+    icon_url TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 
 CREATE TABLE project_members (
@@ -20,14 +20,17 @@ CREATE TABLE projects (
     name TEXT NOT NULL,
     owner TEXT REFERENCES users NOT NULL,
     icon_url TEXT NOT NULL,
-    public BOOLEAN NOT NULL
+    public_permissions INTEGER NOT NULL
 );
 
 CREATE TABLE task_groups (
     id TEXT PRIMARY KEY NOT NULL,
     project_id TEXT REFERENCES projects NOT NULL,
     name TEXT NOT NULL,
-    position INTEGER NOT NULL
+    position INTEGER NOT NULL,
+    --- Ensure no project can have two groups in the 
+    --- same position
+    UNIQUE (project_id, position)
 );
 
 CREATE TABLE tasks (
@@ -82,8 +85,15 @@ CREATE TABLE audit_log (
 
 CREATE TABLE notifications (
     id TEXT PRIMARY KEY NOT NULL,
-    recipient TEXT REFERENCES users NOT NULL,
+    user_id TEXT REFERENCES users NOT NULL,
     body TEXT NOT NULL,
-    notification_type TEXT NOT NULL,
-    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL
+    created DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    read BOOLEAN DEFAULT FALSE NOT NULL
+);
+
+CREATE TABLE notification_actions (
+    id TEXT PRIMARY KEY NOT NULL,
+    notification_id TEXT REFERENCES notifications NOT NULL,
+    title TEXT NOT NULL,
+    action_endpoint TEXT NOT NULL
 );
