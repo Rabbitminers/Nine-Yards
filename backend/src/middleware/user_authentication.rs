@@ -20,7 +20,9 @@ where
 
     fn authorize(&mut self, request: Request<B>) -> Self::Future {
         Box::pin(async {
-            let token = request.headers()
+            let (mut parts, _body) = request.into_parts();
+
+            let token = parts.headers
                 .get(header::AUTHORIZATION)
                 .map(|v| v.to_str().unwrap().to_string())
                 .map(|t| Token(t))
@@ -29,9 +31,9 @@ where
             let claims = token.decode()
                 .map_err(|_| ApiError::Unauthorized.into_response())?.claims;
 
-            request.extensions().insert(claims.user_id);
+            parts.extensions.insert(claims.user_id);
 
-            Ok(request)
+            Ok(Request::from_parts(parts, _body))
         })
     }
 }
