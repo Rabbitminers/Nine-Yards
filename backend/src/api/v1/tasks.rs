@@ -1,28 +1,27 @@
-use axum::{Router, Json, Extension};
-use axum::routing::get;
 use axum::extract::{Path, State};
+use axum::routing::get;
+use axum::{Json, Router};
 
-use crate::ApiContext;
 use crate::error::ApiError;
-use crate::middleware::extractors::Membership;
+use crate::middleware::extractors::TaskMember;
 use crate::models::id::TaskId;
 use crate::models::projects::Permissions;
-use crate::models::tasks::{Task, SubTask, FullTask, SubTaskBuilder, EditTask};
+use crate::models::tasks::{EditTask, FullTask, SubTask, SubTaskBuilder, Task};
 use crate::response::Result;
+use crate::ApiContext;
 
 /// Create a router to be nested on the main api router with
 /// endpoints for task item endpoints and generic sub-task routes
-/// 
+///
 pub fn configure() -> Router<ApiContext> {
     Router::new()
-        .route("/tasks/:id", 
-             get(get_task)
-            .put(edit_task)
-            .delete(remove_task)
+        .route(
+            "/tasks/:id",
+            get(get_task).put(edit_task).delete(remove_task),
         )
-        .route("/tasks/:id/sub-tasks", 
-            get(get_sub_tasks)
-            .post(create_sub_task)
+        .route(
+            "/tasks/:id/sub-tasks",
+            get(get_sub_tasks).post(create_sub_task),
         )
 }
 
@@ -30,11 +29,11 @@ pub fn configure() -> Router<ApiContext> {
 /// each of its subtasks and information about the creator of the
 /// task aswell as it's assignees in order to reduce the need for
 /// subsequent requests.
-/// 
+///
 /// If the project is public then this endpoint requires no
 /// authentication, if it is private then a membership of the
 /// project is required.
-/// 
+///
 #[utoipa::path(
     get,
     path = "/tasks/{id}",
@@ -42,18 +41,20 @@ pub fn configure() -> Router<ApiContext> {
     tag = "v1",
     params(("id" = String, Path, description = "The id of the task", max_length = 10, min_length = 10)),
     responses(
-        (status = 200, description = "Successfully retrieved task and sub-taks", body = FullTask, content_type = "application/json"),
+        (status = 200, description = "Successfully retrieved task and sub-tasks", body = FullTask, content_type = "application/json"),
         (status = 401, description = "Unauthorized, provide a bearer token"),
         (status = 403, description = "Forbidden, you don't have permission to access this task"),
         (status = 500, description = "Internal server error")
     ),
-    security(("Bearer" = [])),
+    security((), ("Bearer" = [])),
 )]
 async fn get_task(
     State(ctx): State<ApiContext>,
     Path(id): Path<TaskId>,
-    _membership: Membership<TaskId>
+    TaskMember(membership): TaskMember
 ) -> Result<Json<FullTask>> {
+    membership.check_permissions(Permissions::READ_PROJECT)?;
+
     Task::get_full(id, &ctx.pool)
         .await?
         .ok_or(ApiError::NotFound)
@@ -63,15 +64,15 @@ async fn get_task(
 /// Edits the values of a task such as it's name or description,
 /// fields like the task's id or the parent project's id cannot
 /// be changed.
-/// 
+///
 /// All fields are optional, except for when the task group is
 /// being updated, in which case the position of the task must
 /// also be provided
-/// 
-/// This endpoint always requires authentication even if the 
+///
+/// This endpoint always requires authentication even if the
 /// project is public and for the given member to have permission
 /// to manage tasks
-/// 
+///
 #[utoipa::path(
     put,
     path = "/tasks/{id}",
@@ -81,7 +82,7 @@ async fn get_task(
     params(("id" = String, Path, description = "The id of the task", max_length = 10, min_length = 10)),
     responses(
         (status = 200, description = "Successfully edited the task", body = Task, content_type = "application/json"),
-        (status = 400, description = "Bad request, if the task group is updated a new position must be given"),
+        (status = 400, description = "Bad request, if the task's group is updated a new position must be given"),
         (status = 401, description = "Unauthorized, provide a bearer token"),
         (status = 403, description = "Forbidden, you don't have permission to edit this task"),
         (status = 500, description = "Internal server error")
@@ -91,15 +92,13 @@ async fn get_task(
 async fn edit_task(
     State(ctx): State<ApiContext>,
     Path(id): Path<TaskId>,
-    Membership{ membership, .. }: Membership<TaskId>,
+    TaskMember(membership): TaskMember,
     Json(form): Json<EditTask>,
 ) -> Result<Json<Task>> {
     let mut transaction = ctx.pool.begin().await?;
 
-    if !membership.permissions.contains(Permissions::MANAGE_TASKS) {
-        return Err(ApiError::Forbidden);
-    }
-    
+    membership.check_permissions(Permissions::EDIT_TASKS)?;
+
     if form.task_group.is_some() && form.position.is_none() {
         return Err(ApiError::BadRequest);
     }
@@ -115,14 +114,14 @@ async fn edit_task(
     Ok(Json(task))
 }
 
-/// Deletes a given task aswell as any references to it such as 
-/// sub-tasks, edges and assignments. This will also create an 
+/// Deletes a given task aswell as any references to it such as
+/// sub-tasks, edges and assignments. This will also create an
 /// audit entry
-/// 
-/// This endpoint always requires authentication even if the 
+///
+/// This endpoint always requires authentication even if the
 /// project is public and for the given member to have permission
 /// to manage tasks
-/// 
+///
 #[utoipa::path(
     delete,
     path = "/tasks/{id}",
@@ -140,31 +139,30 @@ async fn edit_task(
 async fn remove_task(
     State(ctx): State<ApiContext>,
     Path(id): Path<TaskId>,
-    Membership{ membership, .. }: Membership<TaskId>,
+    TaskMember(membership): TaskMember,
 ) -> Result<()> {
     let mut transaction = ctx.pool.begin().await?;
 
-    if !membership.permissions.contains(Permissions::MANAGE_TASKS) {
-        return Err(ApiError::Forbidden);
-    }   
+    membership.check_permissions(Permissions::DELETE_TASKS)?;
 
     let task = Task::get(id, &mut *transaction)
         .await?
         .ok_or(ApiError::Forbidden)?;
-    task.remove(&mut transaction).await?;
 
+    task.remove(&mut transaction).await?;
     transaction.commit().await?;
+
     Ok(())
 }
 
 /// Fetches all the sub-tasks on a given task aswell as information
 /// about the creators and assignees of the sub-tasks to reduce the
 /// need for subsequent requests
-/// 
+///
 /// If the project is public then this endpoint requires no
 /// authentication, if it is private then a membership of the
 /// project is required.
-/// 
+///
 #[utoipa::path(
     get,
     path = "/tasks/{id}/sub-tasks",
@@ -177,13 +175,15 @@ async fn remove_task(
         (status = 403, description = "Forbidden, you don't have permission to access this task"),
         (status = 500, description = "Internal server error")
     ),
-    security(("Bearer" = [])),
+    security((), ("Bearer" = [])),
 )]
 async fn get_sub_tasks(
     State(ctx): State<ApiContext>,
     Path(id): Path<TaskId>,
-    _membership: Membership<TaskId>
+    TaskMember(membership): TaskMember,
 ) -> Result<Json<Vec<SubTask>>> {
+    membership.check_permissions(Permissions::READ_PROJECT)?;
+
     SubTask::get_from_task(id, &ctx.pool)
         .await
         .map(|sub_tasks| Json(sub_tasks))
@@ -191,17 +191,17 @@ async fn get_sub_tasks(
 }
 
 /// Creates a new sub task on the given task, with default values
-/// except for the name which is provided upon creation. Other 
+/// except for the name which is provided upon creation. Other
 /// values such as the task group and project id are extrapolated
 /// and the are therefor not required, any optional fields such
-/// as assignments will be empty. The position will default to 
+/// as assignments will be empty. The position will default to
 /// the last available position in the task group. An audit entry
 /// will also be created
-/// 
-/// /// This endpoint always requires authentication even if the 
-/// project is public and for the given member to have permission
-/// to manage tasks
-/// 
+///
+/// This endpoint always requires authentication even if the project 
+/// is public and for the given member to have permission to manage 
+/// tasks
+///
 #[utoipa::path(
     post,
     path = "/tasks/{id}/sub-tasks",
@@ -220,14 +220,12 @@ async fn get_sub_tasks(
 async fn create_sub_task(
     State(ctx): State<ApiContext>,
     Path(id): Path<TaskId>,
-    Membership{ membership, .. }: Membership<TaskId>,
+    TaskMember(membership): TaskMember,
     Json(form): Json<SubTaskBuilder>,
 ) -> Result<Json<SubTask>> {
     let mut transaction = ctx.pool.begin().await?;
 
-    if !membership.permissions.contains(Permissions::MANAGE_TASKS) {
-        return Err(ApiError::Forbidden);
-    }
+    membership.check_permissions(Permissions::CREATE_TASKS)?;
 
     let sub_task = SubTask::create(id, membership.project_id, form, &mut transaction).await?;
     transaction.commit().await?;
