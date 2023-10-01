@@ -1,7 +1,7 @@
 use chrono::{NaiveDateTime, Utc};
 use futures::TryStreamExt;
 
-use crate::database::Database;
+use crate::database::{Database};
 
 use super::id::{TaskGroupId, ProjectId, TaskId, ProjectMemberId, SubTaskId};
 
@@ -15,6 +15,17 @@ pub struct TaskGroup {
     pub name: String,
     // The position of the task group in the project
     pub position: i64 // Got to have room for your 9223372036854775807 task groups!
+}
+
+#[derive(Deserialize)]
+pub struct EditTaskGroup {
+    // The task group's new name (3 -> 30 characters)
+    pub name: Option<String>,
+    // The position of the task group in the project
+    // If this field is present all other task groups
+    // in the project above will be moved forwards to
+    // ensure the order is still valid
+    pub position: Option<i64>
 }
 
 #[derive(Deserialize)]
@@ -70,6 +81,47 @@ impl TaskGroup {
         Ok(group)
     }  
 
+    pub async fn edit(
+        task_group_id: TaskGroupId,
+        form: EditTaskGroup,
+        transaction: &mut sqlx::Transaction<'_, Database>
+    ) -> Result<(), sqlx::error::Error> {
+        if let Some(position) = form.position {
+            sqlx::query!(
+                "
+                UPDATE task_groups
+                SET position = position + 1
+                WHERE project_id = ( 
+                    SELECT project_id 
+                    FROM task_groups 
+                    WHERE id = $1 
+                )
+                AND position >= $2
+                ",
+                task_group_id,
+                position
+            )
+            .execute(&mut **transaction)
+            .await?;
+        }
+
+        sqlx::query!(
+            "
+            UPDATE task_groups
+            SET name = COALESCE($1, name),
+                position = COALESCE($2, position)
+            WHERE id = $3
+            ",
+            form.name,
+            form.position,
+            task_group_id,
+        )
+        .execute(&mut **transaction)
+        .await?;
+        
+        Ok(())
+    }
+
     /// Removes a `TaskGroup` from the database along with its associated tasks.
     ///
     /// # Arguments
@@ -86,8 +138,20 @@ impl TaskGroup {
         &self, // Take self to prevent double get
         transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<(), sqlx::error::Error> {
-        // TODO: Remove associated sub-tasks
-
+        // Remove associated sub-tasks
+        sqlx::query!(
+            "
+            DELETE FROM sub_tasks
+            WHERE task_id = (
+                SELECT id
+                FROM tasks
+                WHERE task_group_id = $1
+            )
+            ",
+            self.id,
+        )
+        .execute(&mut **transaction)
+        .await?;
         // Remove associated tasks
         sqlx::query!(
             "
@@ -289,6 +353,38 @@ pub struct Task {
     pub created: NaiveDateTime
 }
 
+#[derive(Serialize)]
+pub struct AggrTask {
+    // The task's id (unique)
+    pub id: TaskId,
+    // The parent project's id
+    pub project_id: ProjectId,
+    // The parent task group's id
+    pub task_group_id: TaskGroupId,
+    // The task's name (3 -> 30 characters)
+    pub name: String,
+    // The task's description
+    pub information: Option<String>,
+    // The task's creator's membership id
+    pub creator: ProjectMemberId,
+    // The task's due date (if any) (ms)
+    pub due: Option<NaiveDateTime>,
+    // The task's primary colour (hex) - background
+    pub primary_colour: String,
+    // The task's accent colour (hex) - progress bar
+    pub accent_colour: String,
+    // The task's position in the task group
+    pub position: i64,
+    // The time the task was created (ms)
+    pub created: NaiveDateTime,
+    pub sub_tasks: SubTask
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct SubTasks {
+    pub subtasks: Vec<SubTaskId>
+}
+
 // TODO: Implement hex code validators
 #[derive(Deserialize)]
 pub struct TaskBuilder {
@@ -396,7 +492,7 @@ impl Task {
             UPDATE tasks
             SET position = position + 1
             WHERE position >= $1
-            AND task_group_id = coalesce($2, task_group_id)
+            AND task_group_id = coalesce($2, 0)
             ",
             form.position,
             form.task_group,
@@ -407,7 +503,7 @@ impl Task {
         sqlx::query!(
             // Ideally we would use the WITH ... AS ... syntax to avoid
             // the need for an additional select statement but it is
-            // not support in SQLite
+            // not supported in SQLite
             "
             UPDATE tasks
             SET task_group_id = coalesce($1, task_group_id),
@@ -652,6 +748,7 @@ impl Task {
     where 
         E: sqlx::Executor<'a, Database = Database> + Copy,
     {
+        // TODO: Look into using json_group_array aggregate function
         let responses = sqlx::query_as!(
             Task,
             "
@@ -691,7 +788,7 @@ impl Task {
     ///
     /// - `Ok(full_tasks)`: A vector of full tasks associated with the specified `ProjectId`.
     /// - `Err`: If an error occurs during the retrieval.
-    pub async fn get_from_project<'a, E>(
+    pub async fn get_many_from_project<'a, E>(
         project_id: ProjectId,
         executor: E,
     ) -> Result<Vec<FullTask>, sqlx::error::Error>
@@ -712,7 +809,7 @@ impl Task {
     ///
     /// - `Ok(full_tasks)`: A vector of full tasks associated with the specified `TaskGroupId`.
     /// - `Err`: If an error occurs during the retrieval.
-    pub async fn get_from_task_group<'a, E>(
+    pub async fn get_many_from_task_group<'a, E>(
         task_group_id: TaskGroupId,
         executor: E,
     ) -> Result<Vec<FullTask>, sqlx::error::Error>
@@ -741,6 +838,20 @@ pub struct SubTask {
     pub position: i64,
     // Weather the sub task is completed
     pub completed: bool
+}
+
+#[derive(Deserialize)]
+pub struct EditSubTask {
+    // The assigned members id
+    pub assignee: Option<String>,
+    // The body (description of the sub task)
+    pub body: Option<String>,
+    // The influence of the sub task on total completion
+    pub weight: Option<i64>,
+    // The position of the sub task in task
+    pub position: Option<i64>,
+    // Weather the sub task has been completed
+    pub completed: Option<bool>
 }
 
 #[derive(Deserialize)]
@@ -802,6 +913,53 @@ impl SubTask {
         Ok(sub_task)
     }
 
+    pub async fn edit(
+        id: &SubTaskId,
+        form: EditSubTask,
+        transaction: &mut sqlx::Transaction<'_, Database>,
+    ) -> Result<(), sqlx::error::Error> {
+        if let Some(position) = form.position {
+            sqlx::query!(
+                "
+                UPDATE sub_tasks
+                SET position = position + 1
+                WHERE position >= $1
+                AND task_id = (
+                    SELECT task_id
+                    FROM sub_tasks
+                    WHERE id = $2 
+                )
+                ",
+                position,
+                id
+            )
+            .execute(&mut **transaction)
+            .await?;
+        }
+
+        sqlx::query!(
+            "
+            UPDATE sub_tasks 
+            SET assignee = COALESCE($1, assignee),
+                body = COALESCE($2, body),
+                weight = COALESCE($3, weight),
+                position = COALESCE($4, position),
+                completed = COALESCE($5, completed)
+            WHERE id = $6
+            ",
+            form.assignee,
+            form.body,
+            form.weight,
+            form.position,
+            form.completed,
+            id
+        )
+        .execute(&mut **transaction)
+        .await?;
+        
+        Ok(())
+    }
+
     /// Removes the sub-task from the database within the provided transaction.
     ///
     /// # Arguments
@@ -856,7 +1014,7 @@ impl SubTask {
     ///
     /// - `Ok(())`: If the sub-task is successfully inserted into the database.
     /// - `Err`: If an error occurs during the insertion process.
-    pub async fn insert(
+    async fn insert(
         &self,
         transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<(), sqlx::error::Error> { 
@@ -898,7 +1056,7 @@ impl SubTask {
     /// - `Ok(None)`: If no sub-task with the specified ID is found, it returns `None`.
     /// - `Err`: If an error occurs during the retrieval process.
     pub async fn get<'a, E>(
-        id: TaskGroupId,
+        id: SubTaskId,
         executor: E,
     ) -> Result<Option<Self>, sqlx::error::Error> 
     where
