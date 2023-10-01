@@ -1,10 +1,11 @@
-use sqlx::FromRow;
+use utoipa::ToSchema;
 
 use crate::database::Database;
+use crate::error::ApiError;
 
 use super::id::{ProjectId, UserId, ProjectMemberId};
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct Project {
     // The project's id
     pub id: ProjectId,
@@ -14,18 +15,33 @@ pub struct Project {
     pub owner: UserId,
     // The project's icon's url
     pub icon_url: String,
-    // The project's visibility
-    pub public: bool
+    // The permissions of non-members.
+    // by default this is none
+    pub public_permissions: Permissions
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
+pub struct EditProject {
+    // The project's new name (3 -> 30 charachters)
+    #[schema(example = "My project", min_length = 3, max_length = 30)]
+    pub name: Option<String>,
+    // The project's new icon
+    #[schema(example = "https://example.com/icon.png")]
+    pub icon_url: Option<String>,
+    // The project's new visibility
+    pub public_permissions: Option<Permissions>
+}
+
+#[derive(Deserialize, ToSchema)]
 pub struct ProjectBuilder {
     // The project's name (3 -> 30 charachters)
+    #[schema(example = "My project", min_length = 3, max_length = 30)]
     name: String,
     // The project's icon's url
+    #[schema(example = "https://example.com/icon.png")]
     icon_url: String,
     // The project's visibility
-    public: bool
+    public_permissions: Permissions
 }
 
 impl Project {
@@ -55,7 +71,7 @@ impl Project {
             name: form.name.clone(),
             owner: creator.clone(),
             icon_url: form.icon_url.clone(),
-            public: form.public
+            public_permissions: form.public_permissions
         };
 
         project.insert(transaction).await?;
@@ -75,8 +91,33 @@ impl Project {
         Ok(project)
     }
 
+    pub async fn edit(
+        project_id: ProjectId,
+        form: EditProject,
+        transaction: &mut sqlx::Transaction<'_, Database>
+    ) -> Result<(), sqlx::error::Error> {
+        let permissions = form.public_permissions.map(|p| p.bits() as i64);
+
+        sqlx::query!(
+            "
+            UPDATE projects
+            SET name = coalesce($1, name),
+                icon_url = coalesce($2, icon_url),
+                public_permissions = coalesce($3, public_permissions)
+            WHERE id = $4
+            ",
+            form.name,
+            form.icon_url,
+            permissions,
+            project_id
+        )
+        .execute(&mut **transaction)
+        .await?;
+
+        Ok(())
+    }
+
     /// Removes the project and associated data from the database.
-    ///
     /// # Arguments
     ///
     /// * `id`: The `ProjectId` of the project to be removed.
@@ -164,11 +205,13 @@ impl Project {
         &self,
         transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<(), sqlx::error::Error> {
+        let permssions = self.public_permissions.bits() as i64;
+
         sqlx::query!(
             "
             INSERT INTO projects (
                 id, name, owner, icon_url,
-                public
+                public_permissions
             )
             VALUES (
                 $1, $2, $3, $4, $5
@@ -178,7 +221,7 @@ impl Project {
             self.name,
             self.owner,
             self.icon_url,
-            self.public
+            permssions
         )
         .execute(&mut **transaction)
         .await?;
@@ -210,8 +253,8 @@ impl Project {
         let project = sqlx::query_as!(
             Project,
             "
-            SELECT id, name, owner,
-                   icon_url, public
+            SELECT id, name, owner, icon_url, 
+                   public_permissions
             FROM projects
             WHERE id = $1
             ",
@@ -248,8 +291,8 @@ impl Project {
         let results = sqlx::query_as!(
             Project,
             "
-            SELECT id, name, owner,
-                   icon_url, public
+            SELECT id, name, owner, icon_url, 
+                   public_permissions
             FROM projects
             WHERE $1 = $2
             ",
@@ -264,15 +307,77 @@ impl Project {
 }
 
 bitflags::bitflags! {
-    #[derive(Serialize, Deserialize)]
+    #[derive(Serialize, Deserialize, ToSchema)]
     #[serde(transparent)]
     pub struct Permissions: u64 {
-        // Allows for tasks to be created, removed, assigned and editted
-        const MANAGE_TASKS = 1 << 0;
-        // Allows for the project settings to be changed
-        const MANAGE_PROJECT = 1 << 1;
-        // Allows for the project members to be added and removed and roles changed
-        const MANAGE_TEAM = 1 << 2;
+        // Permission to read any information about
+        // the project such as it's description title,
+        // icon, tasks, sub tasks, members etc. 
+        //
+        const READ_PROJECT = 1 << 0;
+        // Permission to create tasks aswell as add
+        // sub tasks to them.
+        //
+        const CREATE_TASKS = 1 << 1;
+        // Permission to edit any task or sub task
+        // even those created by other members
+        //
+        const EDIT_TASKS = 1 << 2;
+        // Permission to remove any task even on
+        // tasks that where not created by the user
+        //
+        const DELETE_TASKS = 1 << 3;
+        // Permission to create and edit task groups 
+        // in the project aswell as their position. 
+        //
+        const CREATE_TASK_GROUPS = 1 << 4;
+        // Permission to remove any task group from
+        // the project. Aswell as any attached data
+        // such as tasks. 
+        // 
+        const DELETE_TASK_GROUPS = 1 << 5;
+        // Permission to upload files to be stored
+        // in the project's shared storage. 
+        // 
+        const UPLOAD_FILES = 1 << 6;
+        // Permission to remove files from the 
+        // project's shared storage. Including ones
+        // that the user did not upload themselves
+        //
+        const REMOVE_FILES = 1 << 7;
+        // Permission to invite users to the project
+        // and add them as members and assign them
+        // permissions up to their own.
+        //
+        const INVITE_MEMBERS = 1 << 7;
+        // Permission to remove a user from the 
+        // project's team aswell as any related data 
+        // to the user such as assignments and 
+        // optionally any tasks they created if the 
+        // member removing them from the team has 
+        // the `DELETE_TASKS` permission.
+        //
+        const REMOVE_MEMBERS = 1 << 8;
+        // Permission to edit information about the
+        // project such as it's name, description,
+        // icon etc.
+        //
+        const EDIT_PROJECT = 1 << 9;
+        // Permission to remove the project entirely
+        // including all tasks, memberships, files,
+        // etc. 
+        //
+        const DELETE_RPOJECT = 1 << 10;
+    }
+}
+
+impl Permissions {
+    pub fn check_contains(&self, permissions: Permissions) -> Result<(), ApiError> {
+        if self.contains(permissions) {
+            Ok(())
+        } else {
+            Err(ApiError::Forbidden)
+        }
     }
 }
 
@@ -294,22 +399,29 @@ impl From<i64> for Permissions {
 }
 
 impl Default for Permissions {
-    /// Returns the default value for the `Permissions` enum.
-    ///
-    /// The `default` function provides a way to create a default value for the `Permissions` enum.
-    /// When no explicit value is provided, this default value is used. For the `Permissions` enum,
-    /// the default value returned is `Permissions::MANAGE_TASKS`.
-    ///
-    /// # Returns
-    ///
-    /// The default value for the `Permissions` enum, which is `Permissions::MANAGE_TASKS`.
+    /// Returns the default permissions of a new project
+    /// member. This should not be used as a substitute if 
+    /// the members permissions cannot be read as it may
+    /// allow users to perform actions they should not be
+    /// able to.
+    /// 
+    /// By default members have permission to read from the
+    /// project and it's tasks files etc. Aswell as create
+    /// remove and update tasks, sub-tasks and task groups.
+    /// In addition they can upload and remove files from
+    /// project storage. But cannot modify core information 
+    /// about the project such as it's title, icon or 
+    /// description. They also cannot manage other members 
+    /// permissions, or invite new members to the project.
     ///
     fn default() -> Permissions {
-        Permissions::MANAGE_TASKS
+        Permissions::READ_PROJECT | Permissions::CREATE_TASKS 
+        | Permissions::EDIT_TASKS | Permissions::DELETE_TASKS 
+        | Permissions::CREATE_TASK_GROUPS | Permissions::DELETE_TASK_GROUPS
     }
 }
 
-#[derive(Serialize, FromRow)]
+#[derive(Serialize, ToSchema)]
 pub struct ProjectMember {
     // The project member's id
     pub id: ProjectMemberId,
@@ -321,7 +433,6 @@ pub struct ProjectMember {
     pub permissions: Permissions,
     // Whether the user has accepted the project's invitation
     pub accepted: bool,
-
 }
 
 impl ProjectMember {
@@ -340,24 +451,26 @@ impl ProjectMember {
     ///    if the insertion is successful and the user is invited to the project.
     /// - An `sqlx::error::Error` is returned if there is an error generating an ID or executing the database query.
     ///
-    pub async fn invite_user(
-        user: UserId,
-        project: &Project,
+    pub async fn invite_users(
+        user_ids: Vec<UserId>,
+        project_id: ProjectId,
         transaction: &mut sqlx::Transaction<'_, Database>,
-    ) -> Result<Self, sqlx::error::Error> {
-        let member_id = ProjectMemberId::generate(&mut *transaction).await?;
+    ) -> Result<(), sqlx::error::Error> {
+        for user_id in user_ids {
+            let member = ProjectMember {
+                id: ProjectMemberId::generate(&mut *transaction).await?,
+                project_id: project_id.clone(),
+                user_id,
+                permissions: Permissions::all(),
+                accepted: true,
+            };
 
-        let member = ProjectMember {
-            id: member_id,
-            project_id: project.id.clone(),
-            user_id: user,
-            permissions: Permissions::all(),
-            accepted: true,
-        };
+            // TODO: Send notification
 
-        member.insert(&mut *transaction).await?;
+            member.insert(&mut *transaction).await?;
+        }
 
-        Ok(member)
+        Ok(())
     }
 
     /// Accepts the invitation to the project by setting the "accepted" field to true in the database.
@@ -461,6 +574,13 @@ impl ProjectMember {
         .await?;
 
         Ok(())
+    }
+
+    pub fn check_permissions(
+        &self, 
+        permissions: Permissions
+    ) -> Result<(), ApiError> {
+        self.permissions.check_contains(permissions)
     }
 }
 
@@ -579,11 +699,12 @@ impl ProjectMember {
         .fetch_optional(executor)
         .await
     }
-    
-    pub async fn get_many_from_user<'a, E>(
+
+    pub async fn get_accepted_from_user<'a, E>(
         user_id: UserId,
+        project_id: ProjectId,
         executor: E,
-    ) -> Result<Vec<Self>, sqlx::error::Error>
+    ) -> Result<Option<Self>, sqlx::error::Error>
     where
         E: sqlx::Executor<'a, Database = Database>
     {
@@ -594,10 +715,13 @@ impl ProjectMember {
                    permissions, accepted
             FROM project_members
             WHERE user_id = $1
+            AND project_id = $2
+            AND accepted = true
             ",
             user_id,
+            project_id
         )
-        .fetch_all(executor)
+        .fetch_optional(executor)
         .await
     }
 
@@ -642,28 +766,33 @@ impl ProjectMember {
         Ok(results)
     }
 
-    /// Retrieves a list of `ProjectMember` instances for a given `UserId`.
-    ///
-    /// # Arguments
-    ///
-    /// * `user`: The `UserId` for which to retrieve the project memberships.
-    /// * `executor`: A type implementing `sqlx::Executor` that represents the database connection.
-    ///
-    /// # Returns
-    ///
-    /// This method returns `Result<Vec<Self>, sqlx::error::Error>`, where:
-    /// - `Ok(members)` is returned with the list of `ProjectMember` instances if found in the database.
-    /// - An empty vector is returned if the user does not have any project memberships in the database.
-    /// - An `sqlx::error::Error` is returned if there is an error executing the database query.
-    ///
-    pub async fn get_memberships<'a, E>(
-        user: UserId,
+    pub async fn get_many_from_user<'a, E>(
+        user_id: UserId,
         executor: E,
     ) -> Result<Vec<Self>, sqlx::error::Error>
     where
         E: sqlx::Executor<'a, Database = Database>
     {
-        Self::get_many("user_id", user.0, executor).await
+        Self::get_many("user_id", user_id.0, executor).await
     }
 
+    pub async fn get_many_from_project<'a, E>(
+        project_id: ProjectId,
+        executor: E,
+    ) -> Result<Vec<Self>, sqlx::error::Error>
+    where
+        E: sqlx::Executor<'a, Database = Database>
+    {
+        Self::get_many("project_id", project_id.0, executor).await
+    }
+
+    pub async fn get_project<'a, E>(
+        &self,
+        executor: E,
+    ) -> Result<Option<Project>, sqlx::error::Error>
+    where
+        E: sqlx::Executor<'a, Database = Database>
+    {
+        Project::get(self.project_id.clone(), executor).await
+    }
 }
