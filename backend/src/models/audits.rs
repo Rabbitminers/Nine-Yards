@@ -55,17 +55,8 @@ impl Audit {
 }
 
 impl Audit {
-    /// Retrieves an `Audit` record from the database based on the given `id`.
-    /// 
-    /// # Arguments
-    /// 
-    /// * `id`: An `AuditId` representing the unique identifier of the audit record to retrieve.
-    /// * `executor`: An SQLx Executor implementing the `Executor` trait for the specific database (`Database`) and lifetime `'a`.
-    /// 
-    /// # Returns
-    /// 
-    /// Returns a `Result` containing an `Option<Audit>` if the record exists, or an `sqlx::error::Error` if there was an error executing the query.
-    /// If the record with the provided `id` exists, it will be wrapped in `Some`, otherwise, it will be `None`.
+    /// Retrieves a single audit entry by its id regardless of
+    /// the parent project 
     /// 
     pub async fn get<'a, E>(
         id: AuditId,
@@ -88,18 +79,8 @@ impl Audit {
         .await
     }
 
-    /// Retrieves multiple `Audit` records from the database based on the provided column name and value.
-    /// 
-    /// # Arguments
-    /// 
-    /// * `column`: A reference to a `&str` representing the column name in the database to filter the query by.
-    /// * `value`: A `String` representing the value to compare against the specified column in the database.
-    /// * `executor`: An SQLx Executor implementing the `Executor` trait for the specific database (`Database`) and lifetime `'a`.
-    /// 
-    /// # Returns
-    /// 
-    /// Returns a `Result` containing a `Vec<Audit>` with all matching records if any, or an `sqlx::error::Error` if there was an error executing the query.
-    /// If no records are found, the vector will be empty.
+    /// Retrieves many audits given a specific column
+    /// and a value to query
     /// 
     pub async fn get_many<'a, E>(
         column: &str,

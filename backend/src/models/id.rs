@@ -1,7 +1,3 @@
-use axum::async_trait;
-
-use crate::{error::ApiError, database::Database};
-
 const ID_RETRY_COUNT: usize = 20; 
 
 const BASE62_CHARS: [u8; 62] =
@@ -21,7 +17,7 @@ const BASE62_CHARS: [u8; 62] =
 async fn is_id_used(
     table_name: &str,
     id: &str, 
-    transaction: &mut sqlx::Transaction<'_, Database>,
+    transaction: &mut sqlx::Transaction<'_, crate::database::Database>,
 ) -> Result<bool, sqlx::error::Error> { 
     let result = sqlx::query!(
         "
@@ -83,7 +79,7 @@ pub trait DatabaseId {
 /// 
 macro_rules! id {
     ($vis:vis, $struct:ident, $id_length:expr, $table_name:literal) => {
-        #[derive(Clone, serde::Serialize, serde::Deserialize, sqlx::Encode, sqlx::Decode, sqlx::FromRow)]
+        #[derive(Clone, utoipa::ToSchema, serde::Serialize, serde::Deserialize, sqlx::Encode, sqlx::Decode, sqlx::FromRow)]
         #[sqlx(transparent)]
         $vis struct $struct(pub String);
 
@@ -114,7 +110,7 @@ macro_rules! id_generator {
             /// be generated outside of endpoints where the database is written
             /// to and therefore should be ran on a transaction
             $vis async fn generate(
-                transaction: &mut sqlx::Transaction<'_, Database>,
+                transaction: &mut sqlx::Transaction<'_, crate::database::Database>,
             ) -> Result<Self, sqlx::error::Error> {
                 let mut retry_count = 0;
                 let length = $id_length;
@@ -201,3 +197,7 @@ id!(pub, TaskId, 10, "tasks");
 id!(pub, SubTaskId, 12, "task_groups");
 
 id!(pub, AuditId, 12, "audits");
+
+id!(pub, NotificationId, 10, "notifications");
+
+id!(pub, NotificationActionId, 10, "notification_actions");
