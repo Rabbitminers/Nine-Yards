@@ -27,7 +27,7 @@ features = ["v4"]
 [dependencies]
 # Axum / Utoipa
 axum = { version = "0.6.20", features = ["tracing", "headers", "macros"] }
-axum-extra = { version = "0.7.7", features = ["typed-routing"] }
+axum-extra = { version = "0.8.0", features = ["typed-routing"] }
 
 tokio = { version = "1.29.1", features = ["full"] }
 
