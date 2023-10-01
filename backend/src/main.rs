@@ -12,6 +12,7 @@ use database::SqlPool;
 use tower_http::cors::{CorsLayer, Any};
 use tower_http::trace::TraceLayer;
 use utoipa::OpenApi;
+use utoipa::openapi::info;
 use utoipa_swagger_ui::SwaggerUi;
 
 pub mod database;
@@ -20,9 +21,43 @@ pub mod response;
 pub mod middleware;
 pub mod api;
 pub mod error;
+pub mod utilities;
 
 #[derive(OpenApi)]
-#[openapi(paths())]
+#[openapi(
+    info(
+        title = "Nine Yards REST API",
+        version = "0.0.1",
+    ),
+    paths(
+        api::v1::projects::create_project,
+        api::v1::projects::get_memberships_from_user,
+        api::v1::projects::get_project_by_id,
+        api::v1::projects::update_project,
+        api::v1::projects::remove_project,
+        api::v1::projects::get_audits,
+        api::v1::projects::get_members,
+        api::v1::projects::invite_member,
+        api::v1::projects::get_task_groups,
+        api::v1::projects::create_task_group
+    ),
+    components(schemas(
+        models::id::UserId,
+        models::id::ProjectId,
+        models::id::ProjectMemberId,
+        models::id::TaskGroupId,
+        models::id::TaskId,
+        models::id::SubTaskId,
+        models::id::AuditId,
+        models::id::NotificationId,
+        models::id::NotificationActionId,
+        models::projects::Project,
+        models::projects::EditProject,
+        models::projects::ProjectBuilder,
+        models::projects::Permissions,
+        models::projects::ProjectMember,
+    ))
+)]
 pub struct ApiDoc;
 
 #[derive(Clone)]
