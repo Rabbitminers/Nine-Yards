@@ -1,37 +1,59 @@
 use chrono::{NaiveDateTime, Utc};
 use futures::TryStreamExt;
+use utoipa::ToSchema;
 
-use crate::database::{Database};
+use crate::database::Database;
 
 use super::id::{TaskGroupId, ProjectId, TaskId, ProjectMemberId, SubTaskId};
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct TaskGroup {
-    // The task group's id (unique)
+    /// The task group's id (unique)
+    ///
+    #[schema(example="1234567890", min_length=10, max_length=10)]
     pub id: TaskGroupId,
-    // The parent project's id
+    /// The parent project's id
+    /// 
+    #[schema(example="12345678", min_length=8, max_length=8)]
     pub project_id: ProjectId,
-    // The task group's name (3 -> 30 characters)
+    /// The task group's name (3 -> 30 characters)
+    /// 
+    #[schema(example="My Task Group")]
     pub name: String,
-    // The position of the task group in the project
+    /// The position of the task group in the project
+    /// starting from zero
+    /// 
+    #[schema(example=0)]
     pub position: i64 // Got to have room for your 9223372036854775807 task groups!
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct EditTaskGroup {
-    // The task group's new name (3 -> 30 characters)
+    /// The task group's new name (3 -> 30 characters)
+    /// 
+    #[schema(example="My Task Group")]
     pub name: Option<String>,
-    // The position of the task group in the project
-    // If this field is present all other task groups
-    // in the project above will be moved forwards to
-    // ensure the order is still valid
+    /// The position of the task group in the project
+    /// If this field is present all other task groups
+    /// in the project above will be moved forwards to
+    /// ensure the order is still valid
+    /// 
+    #[schema(example=0)]
     pub position: Option<i64>
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct TaskGroupBuilder {
-    // The task group's name (3 -> 30 characters)
+    /// The task group's name (3 -> 30 characters)
+    /// 
+    #[schema(example="My Task Group")]
     pub name: String,
+
+    /// The position of the task group in the project
+    /// If this is lowest unused value is used (the
+    /// end of the list)
+    #[schema(example=0)]
+    pub position: Option<i64>
 }
 
 impl TaskGroup {
@@ -54,22 +76,12 @@ impl TaskGroup {
         project_id: ProjectId,
         transaction: &mut sqlx::Transaction<'_, Database>,
     ) -> Result<Self, sqlx::error::Error> {
-        let id = TaskGroupId::generate(&mut *transaction).await?;
+        let id = TaskGroupId::generate(&mut *transaction).await?;       
 
-        let position = sqlx::query!(
-            "
-            SELECT COALESCE(MAX(position), 0) + 1
-            AS next_available_position
-            FROM task_groups
-            WHERE project_id = $1
-            ",
-            project_id
-        )
-        .fetch_one(&mut **transaction)
-        .await?
-        .next_available_position as i64; // Defaults to 0
+        let position = form.position
+            .unwrap_or(Self::next_available_position(&project_id, transaction).await?);
 
-        let group = TaskGroup { 
+        let group = Self { 
             id, 
             project_id, 
             name: form.name, 
@@ -325,100 +337,148 @@ impl TaskGroup {
     {
         Self::get_many("project_id", project_id.0, executor).await
     }
+
+    async fn next_available_position(
+        project_id: &ProjectId,
+        transaction: &mut sqlx::Transaction<'_, Database>
+    ) -> Result<i64, sqlx::error::Error> {
+        let postion = sqlx::query!(
+            "
+            SELECT COALESCE(MAX(position), 0) + 1
+            AS next_available_position
+            FROM task_groups
+            WHERE project_id = $1
+            ",
+            project_id
+        )
+        .fetch_one(&mut **transaction)
+        .await?
+        .next_available_position as i64; // Defaults to 0
+
+        Ok(postion)
+    }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct Task {
-    // The task's id (unique)
+    /// The task's id (unique)
+    /// 
+    #[schema(example="1234567890", min_length=10, max_length=10)]
     pub id: TaskId,
-    // The parent project's id
+    /// The parent project's id
+    /// 
+    #[schema(example="1234567890", min_length=10, max_length=10)]
     pub project_id: ProjectId,
-    // The parent task group's id
+    /// The parent task group's id
+    //
+    #[schema(example="1234567890", min_length=10, max_length=10)]
     pub task_group_id: TaskGroupId,
-    // The task's name (3 -> 30 characters)
+    /// The task's name (3 -> 30 characters)
+    ///
+    #[schema(example="My task", max_length=90)]
     pub name: String,
-    // The task's description
+    /// The task's description, can also include markdown
+    /// 
+    #[schema(example="Information about my task")]
     pub information: Option<String>,
-    // The task's creator's membership id
+    /// The task's creator's membership id
+    /// 
+    #[schema(example="12345678", min_length=8, max_length=8)]
     pub creator: ProjectMemberId,
-    // The task's due date (if any) (ms)
+    /// The task's due date (if any) (ms)
+    /// 
     pub due: Option<NaiveDateTime>,
-    // The task's primary colour (hex) - background
+    /// The task's primary colour (hex) This is
+    /// the colour used in places like the background
+    /// of the task
+    /// 
+    #[schema(example="#FFFFFF")]
     pub primary_colour: String,
-    // The task's accent colour (hex) - progress bar
+    /// The task's accent colour (hex) This is the 
+    /// colour used in places like the progress bar
+    /// of the task
+    /// 
+    #[schema(example="#FFFFFF")]
     pub accent_colour: String,
-    // The task's position in the task group
+    /// The task's position in the task group
+    /// 
+    #[schema(example=0)]
     pub position: i64,
-    // The time the task was created (ms)
+    /// The time the task was created (ms)
+    /// 
     pub created: NaiveDateTime
 }
 
-#[derive(Serialize)]
-pub struct AggrTask {
-    // The task's id (unique)
-    pub id: TaskId,
-    // The parent project's id
-    pub project_id: ProjectId,
-    // The parent task group's id
-    pub task_group_id: TaskGroupId,
-    // The task's name (3 -> 30 characters)
-    pub name: String,
-    // The task's description
-    pub information: Option<String>,
-    // The task's creator's membership id
-    pub creator: ProjectMemberId,
-    // The task's due date (if any) (ms)
-    pub due: Option<NaiveDateTime>,
-    // The task's primary colour (hex) - background
-    pub primary_colour: String,
-    // The task's accent colour (hex) - progress bar
-    pub accent_colour: String,
-    // The task's position in the task group
-    pub position: i64,
-    // The time the task was created (ms)
-    pub created: NaiveDateTime,
-    pub sub_tasks: SubTask
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct SubTasks {
-    pub subtasks: Vec<SubTaskId>
-}
+/// Additional struct in order to be able to directly
+/// deserialze the actions field of the notification
+///
+#[derive(Serialize, Deserialize, ToSchema)]
+pub struct SubTasks(pub Vec<SubTaskId>);
 
 // TODO: Implement hex code validators
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct TaskBuilder {
-    // The name of the project (3 -> 30 characters)
+    /// The name of the task (3 -> 90 characters)
+    /// 
+    #[schema(example="My task", max_length=90)]
     pub name: String,
-    // The task's primary colour (hex) - background
+    /// The task's primary colour (hex) - background
+    /// 
+    #[schema(example="#FFFFFF")]
     pub primary_colour: String,
-    // The task's accent colour (hex) - progress bar
+    /// The task's accent colour (hex) - progress bar
+    /// 
+    #[schema(example="#FFFFFF")]
     pub accent_colour: String,
 }
 
-#[derive(Serialize)]
+/// A struct containing the full task and all of its 
+/// sub-tasks used in most endpoints where tasks are 
+/// fetched
+/// 
+#[derive(Serialize, ToSchema)]
 pub struct FullTask {
-    // The task
+    // The task and all of its information
     pub task: Task,
     // The tasks sub-tasks
     pub sub_tasks: Vec<SubTask>
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct EditTask {
-    // The new task group (must also have new position)
+    /// The new task group (must also have new position)
+    /// 
+    #[schema(example="1234567890", min_length=10, max_length=10)]
     pub task_group: Option<TaskGroupId>,
-    // The updated task name
+    /// The updated task name
+    /// 
+    #[schema(example="My task", max_length=90)]
     pub name: Option<String>,
-    // The updated task description
+    /// The updated task description
+    /// 
+    #[schema(example="Information about my task")]
     pub information: Option<String>,
-    // The updated due date, must be in the future
+    /// The updated due date, must be in the future
+    /// 
     pub due: Option<NaiveDateTime>,
-    // The tasks new primary colour (hex)
+    /// The tasks new primary colour (hex) used in
+    /// the background colour on tasks as well as 
+    /// other places
+    /// 
+    #[schema(example="#FFFFFF")]
     pub primary_colour: Option<String>,
-    // The tasks new accent colour (hex)
+    /// The tasks new accent colour (hex) used in
+    /// the progress bar colour on tasks as well
+    /// as other places. 
+    /// 
+    #[schema(example="#FFFFFF")]
     pub accent_colour: Option<String>,
-    // The tasks new position
+    /// The tasks new position, if this is higher
+    /// than the highest currently filled position
+    /// then it will be lowered to the current
+    /// heighest
+    /// 
+    #[schema(example=0)]
     pub position: Option<i64>
 }
 
@@ -820,43 +880,75 @@ impl Task {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct SubTask {
-    // The sub-task's id (unique)
+    /// The sub-task's id (unique)
+    /// 
+    #[schema(example="123456789abc", min_length=12, max_length=12)]
     pub id: SubTaskId,
-    // The parent task's id
+    /// The parent task's id. This cannot be changed after
+    /// the task is created.
+    /// 
+    #[schema(example="1234567890", min_length=10, max_length=10)]
     pub task_id: TaskId,
-    // The parent project's id
+    /// The parent project's id
+    /// 
+    #[schema(example="1234567890", min_length=10, max_length=10)]
     pub project_id: ProjectId,
-    // The assigned member's id (optional)
-    pub assignee: Option<String>, // Kept as string to for simplicity
-    // The sub-task's description (0 -> 90 chars)
+    /// The assigned member's user id (optional).
+    /// This is kept as a string to be able to be
+    /// decoded directly.
+    /// 
+    #[schema(example="12345678", min_length=8, max_length=8)]
+    pub assignee: Option<String>,
+    /// The sub-task's description (0 -> 90 chars)
+    /// 
+    #[schema(example="My Subtask")]
     pub body: String,
-    // The weight of the sub-task when calculating completion (optional) (default 100)
+    /// The weight of the sub-task when calculating 
+    /// completion (optional) by default this will
+    /// be taken as 100.
+    /// 
+    #[schema(example=100)]
     pub weight: Option<i64>,
-    // The position of the sub-task in the task
+    /// The position of the sub-task in the task
+    /// 
+    #[schema(example=0)]
     pub position: i64,
-    // Weather the sub task is completed
+    /// Weather the sub task is completed
+    /// 
+    #[schema(example=false)]
     pub completed: bool
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct EditSubTask {
-    // The assigned members id
+    /// The assigned member's user id
+    /// 
+    #[schema(example="12345678", min_length=8, max_length=8)]
     pub assignee: Option<String>,
-    // The body (description of the sub task)
+    /// The body (description of the sub task)
+    /// 
+    #[schema(example="My Subtask")]
     pub body: Option<String>,
-    // The influence of the sub task on total completion
+    /// The influence of the sub task on total completion
+    /// 
+    #[schema(example=200)]
     pub weight: Option<i64>,
-    // The position of the sub task in task
+    /// The position of the sub task in task
+    /// 
+    #[schema(example=0)]
     pub position: Option<i64>,
-    // Weather the sub task has been completed
+    /// Weather the sub task has been completed
+    /// 
+    #[schema(example=true)]
     pub completed: Option<bool>
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct SubTaskBuilder {
     // The sub-task's description (0 -> 90 chars)
+    #[schema(example="My Subtask")]
     pub body: String,
 }
 
