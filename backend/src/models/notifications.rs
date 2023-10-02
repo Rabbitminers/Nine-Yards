@@ -1,55 +1,110 @@
 use chrono::{NaiveDateTime, Utc};
+use utoipa::ToSchema;
 
 use crate::database::Database;
 
 use super::id::{NotificationId, NotificationActionId, UserId};
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct Notification {
+    /// The id of the notification
+    /// 
+    #[schema(example="1234567890", min_length=10, max_length=10)]
     pub id: NotificationId,
+    /// The id of the user set to recieve the notification
+    /// 
+    #[schema(example="12345678", min_length=8, max_length=8)]
     pub user_id: UserId,
+    /// The body (message) of the notification
+    /// 
+    #[schema(example="Hello World")]
     pub body: String,
+    /// The time the notification was created and sent
+    /// 
     pub created: NaiveDateTime,
+    /// Whether the notification has been read or not by the
+    /// recipient.
+    /// 
+    #[schema(example=false)]
     pub read: bool
 }
 
 pub struct NotificationBuilder {
+    /// The body (message) of the notification
     pub body: String,
+    /// The actions that will be available to the recipient
     pub actions: Vec<NotificationActionBuilder>
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, ToSchema)]
 pub struct NotificationAction {
+    /// The id of the action
+    /// 
+    #[schema(example="1234567890", min_length=10, max_length=10)]
     pub id: NotificationActionId,
+    /// The id of the notification this action belongs to
+    /// 
+    #[schema(example="1234567890", min_length=10, max_length=10)]
     pub notification_id: NotificationId,
+    /// The title (description) of the action
+    /// 
+    #[schema(example="Hello World")]
     pub title: String,
+    /// The endpoint to perform the action
+    /// 
+    #[schema(example="https://example.com/action")]
     pub action_endpoint: String
 }
 
 pub struct NotificationActionBuilder {
+    /// The title (description) of the action
+    /// 
     pub title: String,
+    /// The endpoint to perform the action
+    /// 
     pub action_endpoint: String
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct FullNotification {
+    /// The id of the notification
+    ///
+    #[schema(example="1234567890", min_length=10, max_length=10)]
     pub id: NotificationId,
+    /// The id of the user set to recieve the notification
+    /// 
+    #[schema(example="12345678", min_length=8, max_length=8)]
     pub user_id: UserId,
+    /// The body (message) of the notification
+    /// 
+    #[schema(example="Hello World")]
     pub body: String,
+    /// The datetime the notification was created and sent
+    /// 
     pub created: NaiveDateTime,
+    /// Weather or not the recipient has read the notification
+    /// 
+    #[schema(example=false)]
     pub read: bool,
+    /// The actions that will be available to the recipient
+    /// 
     pub actions: Actions
 }
 
-#[derive(Deserialize, Serialize)]
-pub struct Actions {
-    inner: Vec<NotificationAction>
-}
+/// Additional struct in order to be able to directly
+/// deserialze the actions field of the notification
+///
+#[derive(Deserialize, Serialize, ToSchema)]
+pub struct Actions(pub Vec<NotificationAction>);
 
 impl From<String> for Actions {
+    /// In order to read multiple notification actions
+    /// at once from one notification we use a json
+    /// aggregator which then results in a string which
+    /// we can then parse into our actions object
+    /// 
     fn from(value: String) -> Self {
-        let actions: Vec<NotificationAction> = serde_json::from_str(&value).unwrap_or_default();
-        Self { inner: actions }
+        Self(serde_json::from_str(&value).unwrap_or_default())
     }
 }
 
