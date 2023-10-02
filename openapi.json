@@ -1,0 +1,1951 @@
+{
+    "openapi": "3.0.3",
+    "info": {
+      "title": "Nine Yards REST API",
+      "description": "",
+      "contact": {
+        "name": "Rabbitminers",
+        "email": "rabbitminers@zohomail.eu"
+      },
+      "license": {
+        "name": ""
+      },
+      "version": "0.0.1"
+    },
+    "paths": {
+      "/api/v1/projects": {
+        "get": {
+          "tags": [
+            "v1"
+          ],
+          "summary": "Fetches the projects and related membership of that the logged",
+          "description": "Fetches the projects and related membership of that the logged\nin user is a member of. Even if the user has no memberships\nthe request will still return a success response with an empty\narray in the body.\n\nThis endpoint requires a bearer token in order to retreive a\ngiven user's memberships.\n",
+          "operationId": "get_memberships_from_user",
+          "responses": {
+            "200": {
+              "description": "Successfully retrieved project memberships",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/ProjectMember"
+                    }
+                  }
+                }
+              }
+            },
+            "401": {
+              "description": "Unauthorized, provide a bearer token"
+            },
+            "500": {
+              "description": "Internal server error"
+            }
+          },
+          "security": [
+            {
+              "Bearer": []
+            }
+          ]
+        },
+        "post": {
+          "tags": [
+            "v1"
+          ],
+          "operationId": "create_project",
+          "requestBody": {
+            "description": "Details of the project to be created ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectBuilder"
+                }
+              }
+            },
+            "required": true
+          },
+          "responses": {
+            "200": {
+              "description": "Successfully created a project",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Project"
+                  }
+                }
+              }
+            },
+            "401": {
+              "description": "Unauthorized, provide a bearer token"
+            },
+            "500": {
+              "description": "Internal server error"
+            }
+          },
+          "security": [
+            {
+              "Bearer": []
+            }
+          ]
+        }
+      },
+      "/api/v1/projects/{id}": {
+        "get": {
+          "tags": [
+            "v1"
+          ],
+          "summary": "Fetches a project by it's id.",
+          "description": "Fetches a project by it's id.\n\nIf the project is public then this endpoint requires no\nauthentication, if it is private then a membership of the\nproject is required.\n",
+          "operationId": "get_project_by_id",
+          "parameters": [
+            {
+              "name": "id",
+              "in": "path",
+              "description": "The id of the project",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "maxLength": 8,
+                "minLength": 8
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Successfully retrieved project",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Project"
+                  }
+                }
+              }
+            },
+            "401": {
+              "description": "Unauthorized, provide a bearer token"
+            },
+            "403": {
+              "description": "Forbidden, you don't have permission to access this project"
+            },
+            "500": {
+              "description": "Internal server error"
+            }
+          },
+          "security": [
+            {
+  
+            },
+            {
+              "Bearer": []
+            }
+          ]
+        },
+        "put": {
+          "tags": [
+            "v1"
+          ],
+          "operationId": "update_project",
+          "parameters": [
+            {
+              "name": "id",
+              "in": "path",
+              "description": "The id of the project",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "maxLength": 8,
+                "minLength": 8
+              }
+            }
+          ],
+          "requestBody": {
+            "description": "The values to update",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EditProject"
+                }
+              }
+            },
+            "required": true
+          },
+          "responses": {
+            "200": {
+              "description": "Successfully edited the project",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Project"
+                  }
+                }
+              }
+            },
+            "401": {
+              "description": "Unauthorized, provide a bearer token"
+            },
+            "403": {
+              "description": "Forbidden, you don't have permission to edit this project"
+            },
+            "500": {
+              "description": "Internal server error"
+            }
+          },
+          "security": [
+            {
+              "Bearer": []
+            }
+          ]
+        },
+        "delete": {
+          "tags": [
+            "v1"
+          ],
+          "operationId": "remove_project",
+          "parameters": [
+            {
+              "name": "id",
+              "in": "path",
+              "description": "The id of the project",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "maxLength": 8,
+                "minLength": 8
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Successfully removed a project"
+            },
+            "401": {
+              "description": "Unauthorized, provide a bearer token"
+            },
+            "403": {
+              "description": "Forbidden, you don't have permission to invite a member to this project"
+            },
+            "500": {
+              "description": "Internal server error"
+            }
+          },
+          "security": [
+            {
+              "Bearer": []
+            }
+          ]
+        }
+      },
+      "/api/v1/projects/{id}/audits": {
+        "get": {
+          "tags": [
+            "v1"
+          ],
+          "operationId": "get_members",
+          "parameters": [
+            {
+              "name": "id",
+              "in": "path",
+              "description": "The id of the project",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "maxLength": 8,
+                "minLength": 8
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Successfully retrieved project audits",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/Audit"
+                    }
+                  }
+                }
+              }
+            },
+            "401": {
+              "description": "Unauthorized, provide a bearer token"
+            },
+            "403": {
+              "description": "Forbidden, you don't have permission to access this project's memberships"
+            },
+            "500": {
+              "description": "Internal server error"
+            }
+          },
+          "security": [
+            {
+  
+            },
+            {
+              "Bearer": []
+            }
+          ]
+        }
+      },
+      "/api/v1/projects/{id}/members": {
+        "post": {
+          "tags": [
+            "v1"
+          ],
+          "operationId": "invite_member",
+          "parameters": [
+            {
+              "name": "id",
+              "in": "path",
+              "description": "The id of the project to invite a user to",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "maxLength": 8,
+                "minLength": 8
+              }
+            }
+          ],
+          "requestBody": {
+            "description": "The users id's to invite",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "required": true
+          },
+          "responses": {
+            "200": {
+              "description": "Successfully invited member and sent invitation notification"
+            },
+            "401": {
+              "description": "Unauthorized, provide a bearer token"
+            },
+            "403": {
+              "description": "Forbidden, you don't have permission to invite a member to this project"
+            },
+            "500": {
+              "description": "Internal server error"
+            }
+          },
+          "security": [
+            {
+              "Bearer": []
+            }
+          ]
+        }
+      },
+      "/api/v1/projects/{id}/task-groups": {
+        "get": {
+          "tags": [
+            "v1"
+          ],
+          "operationId": "get_task_groups",
+          "parameters": [
+            {
+              "name": "id",
+              "in": "path",
+              "description": "The id of the project",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "maxLength": 8,
+                "minLength": 8
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Successfully retrieved project's task groups",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/TaskGroup"
+                    }
+                  }
+                }
+              }
+            },
+            "401": {
+              "description": "Unauthorized, provide a bearer token"
+            },
+            "403": {
+              "description": "Forbidden, you don't have permission to access this project's audits"
+            },
+            "500": {
+              "description": "Internal server error"
+            }
+          },
+          "security": [
+            {
+  
+            },
+            {
+              "Bearer": []
+            }
+          ]
+        },
+        "post": {
+          "tags": [
+            "v1"
+          ],
+          "operationId": "create_task_group",
+          "parameters": [
+            {
+              "name": "id",
+              "in": "path",
+              "description": "The id of the project",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "maxLength": 8,
+                "minLength": 8
+              }
+            }
+          ],
+          "requestBody": {
+            "description": "Details of the new task group",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TaskGroupBuilder"
+                  }
+                }
+              }
+            },
+            "required": true
+          },
+          "responses": {
+            "200": {
+              "description": "Successfully created a project"
+            },
+            "401": {
+              "description": "Unauthorized, provide a bearer token"
+            },
+            "403": {
+              "description": "Forbidden, you don't have permission to invite a member to this project"
+            },
+            "500": {
+              "description": "Internal server error"
+            }
+          },
+          "security": [
+            {
+              "Bearer": []
+            }
+          ]
+        }
+      },
+      "/api/v1/sub-tasks/{id}": {
+        "get": {
+          "tags": [
+            "v1"
+          ],
+          "summary": "Fetches the sub-task specified by the id path parameter",
+          "description": "Fetches the sub-task specified by the id path parameter\n\nIf the project is public then this endpoint requires no\nauthentication, if it is private then a membership of the\nproject is required.\n",
+          "operationId": "get_sub_task_by_id",
+          "parameters": [
+            {
+              "name": "id",
+              "in": "path",
+              "description": "The id of the sub task",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "maxLength": 12,
+                "minLength": 12
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Successfully retrieved sub-task",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/SubTask"
+                  }
+                }
+              }
+            },
+            "401": {
+              "description": "Unauthorized, provide a bearer token"
+            },
+            "403": {
+              "description": "Forbidden, you don't have permission to access this sub task"
+            },
+            "500": {
+              "description": "Internal server error"
+            }
+          },
+          "security": [
+            {
+  
+            },
+            {
+              "Bearer": []
+            }
+          ]
+        },
+        "put": {
+          "tags": [
+            "v1"
+          ],
+          "summary": "Edits the values of a sub task such as it's body or weight",
+          "description": "Edits the values of a sub task such as it's body or weight\n\nIf the position of the sub task is updated all other subtasks\nin a position equal to or greater than the updated position\nare moved forwards to make space for the new location\n\nThis endpoint always requires authentication even if the\nproject is public and for the given member to have permission\nto edit tasks\n",
+          "operationId": "edit_sub_task",
+          "parameters": [
+            {
+              "name": "id",
+              "in": "path",
+              "description": "The id of the sub-task",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "maxLength": 12,
+                "minLength": 12
+              }
+            }
+          ],
+          "requestBody": {
+            "description": "The values to update",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EditSubTask"
+                }
+              }
+            },
+            "required": true
+          },
+          "responses": {
+            "200": {
+              "description": "Successfully edited the sub task",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/SubTask"
+                  }
+                }
+              }
+            },
+            "401": {
+              "description": "Unauthorized, provide a bearer token"
+            },
+            "403": {
+              "description": "Forbidden, you don't have permission to edit this sub-task"
+            },
+            "500": {
+              "description": "Internal server error"
+            }
+          },
+          "security": [
+            {
+              "Bearer": []
+            }
+          ]
+        },
+        "delete": {
+          "tags": [
+            "v1"
+          ],
+          "summary": "Deletes a given sub task aswell as any references to it such",
+          "description": "Deletes a given sub task aswell as any references to it such\nas assignments and notifications\n\nThis endpoint always requires authentication even if the\nproject is public and for the given member to have permission\nto remove tasks\n",
+          "operationId": "remove_sub_task",
+          "parameters": [
+            {
+              "name": "id",
+              "in": "path",
+              "description": "The id of the sub task to remove",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "maxLength": 12,
+                "minLength": 12
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Successfully removed the sub task"
+            },
+            "401": {
+              "description": "Unauthorized, provide a bearer token"
+            },
+            "403": {
+              "description": "Forbidden, you don't have permission to remove this sub task"
+            },
+            "500": {
+              "description": "Internal server error"
+            }
+          },
+          "security": [
+            {
+              "Bearer": []
+            }
+          ]
+        }
+      },
+      "/api/v1/task-groups/{id}": {
+        "get": {
+          "tags": [
+            "v1"
+          ],
+          "operationId": "get_task_group_by_id",
+          "parameters": [
+            {
+              "name": "id",
+              "in": "path",
+              "description": "The id of the task group",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "maxLength": 10,
+                "minLength": 10
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Successfully fetched task group",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/TaskGroup"
+                  }
+                }
+              }
+            },
+            "401": {
+              "description": "Unauthorized, provide a bearer token"
+            },
+            "403": {
+              "description": "Forbidden, you don't have permission to read from this project"
+            },
+            "500": {
+              "description": "Internal server error"
+            }
+          },
+          "security": [
+            {
+  
+            },
+            {
+              "Bearer": []
+            }
+          ]
+        },
+        "put": {
+          "tags": [
+            "v1"
+          ],
+          "operationId": "edit_task_group",
+          "parameters": [
+            {
+              "name": "id",
+              "in": "path",
+              "description": "The id of the task group",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "maxLength": 10,
+                "minLength": 10
+              }
+            }
+          ],
+          "requestBody": {
+            "description": "The values to update",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EditTaskGroup"
+                }
+              }
+            },
+            "required": true
+          },
+          "responses": {
+            "200": {
+              "description": "Successfully edited the task group",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/TaskGroup"
+                  }
+                }
+              }
+            },
+            "401": {
+              "description": "Unauthorized, provide a bearer token"
+            },
+            "403": {
+              "description": "Forbidden, you don't have permission to edit this task group"
+            },
+            "500": {
+              "description": "Internal server error"
+            }
+          },
+          "security": [
+            {
+              "Bearer": []
+            }
+          ]
+        },
+        "delete": {
+          "tags": [
+            "v1"
+          ],
+          "operationId": "remove_task_group",
+          "parameters": [
+            {
+              "name": "id",
+              "in": "path",
+              "description": "The id of the task group to remove",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "maxLength": 10,
+                "minLength": 10
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Successfully removed the task group",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/TaskGroup"
+                  }
+                }
+              }
+            },
+            "401": {
+              "description": "Unauthorized, provide a bearer token"
+            },
+            "403": {
+              "description": "Forbidden, you don't have permission to remove this task group"
+            },
+            "500": {
+              "description": "Internal server error"
+            }
+          },
+          "security": [
+            {
+              "Bearer": []
+            }
+          ]
+        }
+      },
+      "/api/v1/task-groups/{id}/tasks": {
+        "get": {
+          "tags": [
+            "v1"
+          ],
+          "operationId": "get_tasks",
+          "parameters": [
+            {
+              "name": "id",
+              "in": "path",
+              "description": "The id of the task group to fetch the tasks from",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "maxLength": 10,
+                "minLength": 10
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Successfully fetched task group",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/TaskGroup"
+                    }
+                  }
+                }
+              }
+            },
+            "401": {
+              "description": "Unauthorized, provide a bearer token"
+            },
+            "403": {
+              "description": "Forbidden, you don't have permission to read from this project"
+            },
+            "500": {
+              "description": "Internal server error"
+            }
+          },
+          "security": [
+            {
+  
+            },
+            {
+              "Bearer": []
+            }
+          ]
+        }
+      },
+      "/api/v1/tasks/{id}": {
+        "get": {
+          "tags": [
+            "v1"
+          ],
+          "summary": "Fetches the task specified by the id path parameter aswell as",
+          "description": "Fetches the task specified by the id path parameter aswell as\neach of its subtasks and information about the creator of the\ntask aswell as it's assignees in order to reduce the need for\nsubsequent requests.\n\nIf the project is public then this endpoint requires no\nauthentication, if it is private then a membership of the\nproject is required.\n",
+          "operationId": "get_task",
+          "parameters": [
+            {
+              "name": "id",
+              "in": "path",
+              "description": "The id of the task",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "maxLength": 10,
+                "minLength": 10
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Successfully retrieved task and sub-tasks",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/FullTask"
+                  }
+                }
+              }
+            },
+            "401": {
+              "description": "Unauthorized, provide a bearer token"
+            },
+            "403": {
+              "description": "Forbidden, you don't have permission to access this task"
+            },
+            "500": {
+              "description": "Internal server error"
+            }
+          },
+          "security": [
+            {
+  
+            },
+            {
+              "Bearer": []
+            }
+          ]
+        },
+        "put": {
+          "tags": [
+            "v1"
+          ],
+          "summary": "Edits the values of a task such as it's name or description,",
+          "description": "Edits the values of a task such as it's name or description,\nfields like the task's id or the parent project's id cannot\nbe changed.\n\nAll fields are optional, except for when the task group is\nbeing updated, in which case the position of the task must\nalso be provided\n\nThis endpoint always requires authentication even if the\nproject is public and for the given member to have permission\nto manage tasks\n",
+          "operationId": "edit_task",
+          "parameters": [
+            {
+              "name": "id",
+              "in": "path",
+              "description": "The id of the task",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "maxLength": 10,
+                "minLength": 10
+              }
+            }
+          ],
+          "requestBody": {
+            "description": "The values to update",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EditTask"
+                }
+              }
+            },
+            "required": true
+          },
+          "responses": {
+            "200": {
+              "description": "Successfully edited the task",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Task"
+                  }
+                }
+              }
+            },
+            "400": {
+              "description": "Bad request, if the task's group is updated a new position must be given"
+            },
+            "401": {
+              "description": "Unauthorized, provide a bearer token"
+            },
+            "403": {
+              "description": "Forbidden, you don't have permission to edit this task"
+            },
+            "500": {
+              "description": "Internal server error"
+            }
+          },
+          "security": [
+            {
+              "Bearer": []
+            }
+          ]
+        },
+        "delete": {
+          "tags": [
+            "v1"
+          ],
+          "summary": "Deletes a given task aswell as any references to it such as",
+          "description": "Deletes a given task aswell as any references to it such as\nsub-tasks, edges and assignments. This will also create an\naudit entry\n\nThis endpoint always requires authentication even if the\nproject is public and for the given member to have permission\nto manage tasks\n",
+          "operationId": "remove_task",
+          "parameters": [
+            {
+              "name": "id",
+              "in": "path",
+              "description": "The id of the task",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "maxLength": 10,
+                "minLength": 10
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Successfully removed the task"
+            },
+            "401": {
+              "description": "Unauthorized, provide a bearer token"
+            },
+            "403": {
+              "description": "Forbidden, you don't have permission to remove this task"
+            },
+            "500": {
+              "description": "Internal server error"
+            }
+          },
+          "security": [
+            {
+              "Bearer": []
+            }
+          ]
+        }
+      },
+      "/api/v1/tasks/{id}/sub-tasks": {
+        "get": {
+          "tags": [
+            "v1"
+          ],
+          "summary": "Fetches all the sub-tasks on a given task aswell as information",
+          "description": "Fetches all the sub-tasks on a given task aswell as information\nabout the creators and assignees of the sub-tasks to reduce the\nneed for subsequent requests\n\nIf the project is public then this endpoint requires no\nauthentication, if it is private then a membership of the\nproject is required.\n",
+          "operationId": "get_sub_tasks",
+          "parameters": [
+            {
+              "name": "id",
+              "in": "path",
+              "description": "The id of the parent tasks",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "maxLength": 10,
+                "minLength": 10
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Successfully retrieved task and sub-taks",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/SubTask"
+                    }
+                  }
+                }
+              }
+            },
+            "401": {
+              "description": "Unauthorized, provide a bearer token"
+            },
+            "403": {
+              "description": "Forbidden, you don't have permission to access this task"
+            },
+            "500": {
+              "description": "Internal server error"
+            }
+          },
+          "security": [
+            {
+  
+            },
+            {
+              "Bearer": []
+            }
+          ]
+        },
+        "post": {
+          "tags": [
+            "v1"
+          ],
+          "summary": "Creates a new sub task on the given task, with default values",
+          "description": "Creates a new sub task on the given task, with default values\nexcept for the name which is provided upon creation. Other\nvalues such as the task group and project id are extrapolated\nand the are therefor not required, any optional fields such\nas assignments will be empty. The position will default to\nthe last available position in the task group. An audit entry\nwill also be created\n\nThis endpoint always requires authentication even if the project\nis public and for the given member to have permission to manage\ntasks\n",
+          "operationId": "create_sub_task",
+          "parameters": [
+            {
+              "name": "id",
+              "in": "path",
+              "description": "The id of the paretn task",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "maxLength": 10,
+                "minLength": 10
+              }
+            }
+          ],
+          "requestBody": {
+            "description": "The data of the new sub task",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubTaskBuilder"
+                }
+              }
+            },
+            "required": true
+          },
+          "responses": {
+            "200": {
+              "description": "Successfully created a sub sub task",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/SubTask"
+                  }
+                }
+              }
+            },
+            "401": {
+              "description": "Unauthorized, provide a bearer token"
+            },
+            "403": {
+              "description": "Forbidden, you don't have permission to edit this task"
+            },
+            "500": {
+              "description": "Internal server error"
+            }
+          },
+          "security": [
+            {
+              "Bearer": []
+            }
+          ]
+        }
+      },
+      "/api/v1/users": {
+        "get": {
+          "tags": [
+            "v1"
+          ],
+          "summary": "Fetches information about the user provided by the given",
+          "description": "Fetches information about the user provided by the given\nbearer token. Despite the password hash being stored in the\nuser struct it is skipped during serialization for security.\n\nThis endpoint requires a bearer token to be provided in the\nrequest headers.\n",
+          "operationId": "get_current_user",
+          "responses": {
+            "200": {
+              "description": "Successfully retrieved user",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/User"
+                  }
+                }
+              }
+            },
+            "401": {
+              "description": "Unauthorized, provide a bearer token"
+            },
+            "500": {
+              "description": "Internal server error"
+            }
+          },
+          "security": [
+            {
+              "Bearer": []
+            }
+          ]
+        }
+      },
+      "/api/v1/users/login": {
+        "get": {
+          "tags": [
+            "v1"
+          ],
+          "summary": "Logs in a user given their credentials and returns an",
+          "description": "Logs in a user given their credentials and returns an\nauthorised bearer token which can be used to authenticate\n\nThis token should be placed in subsequent request headers\nlike so\n\nAuthorization: Bearer \u003Ctoken\u003E\n",
+          "operationId": "login",
+          "requestBody": {
+            "description": "A login form",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Login"
+                }
+              }
+            },
+            "required": true
+          },
+          "responses": {
+            "200": {
+              "description": "Successfully retrieved user",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/AuthenticatedUser"
+                  }
+                }
+              }
+            },
+            "401": {
+              "description": "Unauthorized, provide a bearer token"
+            },
+            "500": {
+              "description": "Internal server error"
+            }
+          }
+        }
+      },
+      "/api/v1/users/register": {
+        "post": {
+          "tags": [
+            "v1"
+          ],
+          "summary": "Registers a new user and returns their information aswell as",
+          "description": "Registers a new user and returns their information aswell as\nan authorised bearer token to prevent the need to login with\na subsequent request.\n",
+          "operationId": "register",
+          "requestBody": {
+            "description": "A register form",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Register"
+                }
+              }
+            },
+            "required": true
+          },
+          "responses": {
+            "200": {
+              "description": "Successfully registered",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/AuthenticatedUser"
+                  }
+                }
+              }
+            },
+            "400": {
+              "description": "Bad request"
+            },
+            "500": {
+              "description": "Internal server error"
+            }
+          }
+        }
+      },
+      "/api/v1/users/{id}": {
+        "get": {
+          "tags": [
+            "v1"
+          ],
+          "summary": "Fetches information about a user given their id. If the user",
+          "description": "Fetches information about a user given their id. If the user\ndoes not exist 403 forbidden will be retured instead of 404\nnot found for security.\n\nThis endpoint may require authentication depending on the\nprivicy level set by the user.\n",
+          "operationId": "get_user_by_id",
+          "parameters": [
+            {
+              "name": "id",
+              "in": "path",
+              "description": "The user's id",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "maxLength": 8,
+                "minLength": 8
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Successfully retrieved user",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/User"
+                  }
+                }
+              }
+            },
+            "401": {
+              "description": "Unauthorized, provide a bearer token"
+            },
+            "403": {
+              "description": "Forbidden, you don't have permission to access this user"
+            },
+            "500": {
+              "description": "Internal server error"
+            }
+          },
+          "security": [
+            {
+  
+            },
+            {
+              "Bearer": []
+            }
+          ]
+        }
+      }
+    },
+    "components": {
+      "schemas": {
+        "Actions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/components/schemas/NotificationAction"
+          }
+        },
+        "Audit": {
+          "type": "object",
+          "required": [
+            "id",
+            "auditor",
+            "project_id",
+            "body",
+            "timestamp"
+          ],
+          "properties": {
+            "auditor": {
+              "$ref": "#/components/schemas/ProjectMemberId"
+            },
+            "body": {
+              "type": "string",
+              "description": "The body of the audit\n",
+              "example": "Example body"
+            },
+            "id": {
+              "$ref": "#/components/schemas/AuditId"
+            },
+            "project_id": {
+              "$ref": "#/components/schemas/ProjectId"
+            },
+            "timestamp": {
+              "type": "string",
+              "format": "date-time",
+              "description": "The datetime the audit was created\n"
+            }
+          }
+        },
+        "AuditId": {
+          "type": "string"
+        },
+        "AuthenticatedUser": {
+          "type": "object",
+          "required": [
+            "user",
+            "token"
+          ],
+          "properties": {
+            "token": {
+              "$ref": "#/components/schemas/Token"
+            },
+            "user": {
+              "$ref": "#/components/schemas/User"
+            }
+          }
+        },
+        "EditProject": {
+          "type": "object",
+          "properties": {
+            "icon_url": {
+              "type": "string",
+              "description": "The project's new icon's url\n",
+              "example": "https://example.com/icon.png",
+              "nullable": true
+            },
+            "name": {
+              "type": "string",
+              "description": "The project's new name (3 -\u003E 30 charachters)\n",
+              "example": "My project",
+              "nullable": true,
+              "maxLength": 30,
+              "minLength": 3
+            },
+            "public_permissions": {
+              "type": "integer",
+              "format": "int64",
+              "description": "The project's new visibility\n",
+              "example": 0,
+              "nullable": true,
+              "minimum": 0
+            }
+          }
+        },
+        "EditSubTask": {
+          "type": "object",
+          "properties": {
+            "assignee": {
+              "type": "string",
+              "description": "The assigned member's user id\n",
+              "example": "12345678",
+              "nullable": true,
+              "maxLength": 8,
+              "minLength": 8
+            },
+            "body": {
+              "type": "string",
+              "description": "The body (description of the sub task)\n",
+              "example": "My Subtask",
+              "nullable": true
+            },
+            "completed": {
+              "type": "boolean",
+              "description": "Weather the sub task has been completed\n",
+              "example": true,
+              "nullable": true
+            },
+            "position": {
+              "type": "integer",
+              "format": "int64",
+              "description": "The position of the sub task in task\n",
+              "example": 0,
+              "nullable": true
+            },
+            "weight": {
+              "type": "integer",
+              "format": "int64",
+              "description": "The influence of the sub task on total completion\n",
+              "example": 200,
+              "nullable": true
+            }
+          }
+        },
+        "EditTask": {
+          "type": "object",
+          "properties": {
+            "accent_colour": {
+              "type": "string",
+              "description": "The tasks new accent colour (hex) used in\nthe progress bar colour on tasks as well\nas other places.\n",
+              "example": "#FFFFFF",
+              "nullable": true
+            },
+            "due": {
+              "type": "string",
+              "format": "date-time",
+              "description": "The updated due date, must be in the future\n",
+              "nullable": true
+            },
+            "information": {
+              "type": "string",
+              "description": "The updated task description\n",
+              "example": "Information about my task",
+              "nullable": true
+            },
+            "name": {
+              "type": "string",
+              "description": "The updated task name\n",
+              "example": "My task",
+              "nullable": true,
+              "maxLength": 90
+            },
+            "position": {
+              "type": "integer",
+              "format": "int64",
+              "description": "The tasks new position, if this is higher\nthan the highest currently filled position\nthen it will be lowered to the current\nheighest\n",
+              "example": 0,
+              "nullable": true
+            },
+            "primary_colour": {
+              "type": "string",
+              "description": "The tasks new primary colour (hex) used in\nthe background colour on tasks as well as\nother places\n",
+              "example": "#FFFFFF",
+              "nullable": true
+            },
+            "task_group": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/TaskGroupId"
+                }
+              ],
+              "nullable": true
+            }
+          }
+        },
+        "EditTaskGroup": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "The task group's new name (3 -\u003E 30 characters)\n",
+              "example": "My Task Group",
+              "nullable": true
+            },
+            "position": {
+              "type": "integer",
+              "format": "int64",
+              "description": "The position of the task group in the project\nIf this field is present all other task groups\nin the project above will be moved forwards to\nensure the order is still valid\n",
+              "example": 0,
+              "nullable": true
+            }
+          }
+        },
+        "FullNotification": {
+          "type": "object",
+          "required": [
+            "id",
+            "user_id",
+            "body",
+            "created",
+            "read",
+            "actions"
+          ],
+          "properties": {
+            "actions": {
+              "$ref": "#/components/schemas/Actions"
+            },
+            "body": {
+              "type": "string",
+              "description": "The body (message) of the notification\n",
+              "example": "Hello World"
+            },
+            "created": {
+              "type": "string",
+              "format": "date-time",
+              "description": "The datetime the notification was created and sent\n"
+            },
+            "id": {
+              "$ref": "#/components/schemas/NotificationId"
+            },
+            "read": {
+              "type": "boolean",
+              "description": "Weather or not the recipient has read the notification\n",
+              "example": false
+            },
+            "user_id": {
+              "$ref": "#/components/schemas/UserId"
+            }
+          }
+        },
+        "FullTask": {
+          "type": "object",
+          "description": "A struct containing the full task and all of its\nsub-tasks used in most endpoints where tasks are\nfetched\n",
+          "required": [
+            "task",
+            "sub_tasks"
+          ],
+          "properties": {
+            "sub_tasks": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/SubTask"
+              }
+            },
+            "task": {
+              "$ref": "#/components/schemas/Task"
+            }
+          }
+        },
+        "Login": {
+          "type": "object",
+          "required": [
+            "username_or_email",
+            "password"
+          ],
+          "properties": {
+            "password": {
+              "type": "string",
+              "format": "password",
+              "description": "The user's password to validated\n",
+              "example": "password"
+            },
+            "username_or_email": {
+              "type": "string",
+              "description": "Either a username or email for validation\n",
+              "example": "My username"
+            }
+          }
+        },
+        "Notification": {
+          "type": "object",
+          "required": [
+            "id",
+            "user_id",
+            "body",
+            "created",
+            "read"
+          ],
+          "properties": {
+            "body": {
+              "type": "string",
+              "description": "The body (message) of the notification\n",
+              "example": "Hello World"
+            },
+            "created": {
+              "type": "string",
+              "format": "date-time",
+              "description": "The time the notification was created and sent\n"
+            },
+            "id": {
+              "$ref": "#/components/schemas/NotificationId"
+            },
+            "read": {
+              "type": "boolean",
+              "description": "Whether the notification has been read or not by the\nrecipient.\n",
+              "example": false
+            },
+            "user_id": {
+              "$ref": "#/components/schemas/UserId"
+            }
+          }
+        },
+        "NotificationAction": {
+          "type": "object",
+          "required": [
+            "id",
+            "notification_id",
+            "title",
+            "action_endpoint"
+          ],
+          "properties": {
+            "action_endpoint": {
+              "type": "string",
+              "description": "The endpoint to perform the action\n",
+              "example": "https://example.com/action"
+            },
+            "id": {
+              "$ref": "#/components/schemas/NotificationActionId"
+            },
+            "notification_id": {
+              "$ref": "#/components/schemas/NotificationId"
+            },
+            "title": {
+              "type": "string",
+              "description": "The title (description) of the action\n",
+              "example": "Hello World"
+            }
+          }
+        },
+        "NotificationActionId": {
+          "type": "string"
+        },
+        "NotificationId": {
+          "type": "string"
+        },
+        "Project": {
+          "type": "object",
+          "required": [
+            "id",
+            "name",
+            "owner",
+            "icon_url",
+            "public_permissions"
+          ],
+          "properties": {
+            "icon_url": {
+              "type": "string",
+              "description": "The project's icon's url\n",
+              "example": "https://example.com/icon.png"
+            },
+            "id": {
+              "$ref": "#/components/schemas/ProjectId"
+            },
+            "name": {
+              "type": "string",
+              "description": "The project's name (3 -\u003E 30 charachters)\n",
+              "example": "My project",
+              "maxLength": 30,
+              "minLength": 3
+            },
+            "owner": {
+              "$ref": "#/components/schemas/UserId"
+            },
+            "public_permissions": {
+              "type": "integer",
+              "format": "int64",
+              "description": "The permissions of non-member by default this is none.\nAnd a membership would be needed to interact with the\nproject in any capcacity.\n",
+              "example": 0,
+              "minimum": 0
+            }
+          }
+        },
+        "ProjectBuilder": {
+          "type": "object",
+          "required": [
+            "name",
+            "icon_url",
+            "public_permissions"
+          ],
+          "properties": {
+            "icon_url": {
+              "type": "string",
+              "description": "The project's icon's url\n",
+              "example": "https://example.com/icon.png"
+            },
+            "name": {
+              "type": "string",
+              "description": "The project's name (3 -\u003E 30 charachters)\n",
+              "example": "My project",
+              "maxLength": 30,
+              "minLength": 3
+            },
+            "public_permissions": {
+              "type": "integer",
+              "format": "int64",
+              "description": "The project's visibility,\n",
+              "example": 0,
+              "minimum": 0
+            }
+          }
+        },
+        "ProjectId": {
+          "type": "string"
+        },
+        "ProjectMember": {
+          "type": "object",
+          "required": [
+            "id",
+            "project_id",
+            "user_id",
+            "permissions",
+            "accepted"
+          ],
+          "properties": {
+            "accepted": {
+              "type": "boolean",
+              "description": "Whether the user has accepted the project's invitation\n",
+              "example": true
+            },
+            "id": {
+              "$ref": "#/components/schemas/ProjectMemberId"
+            },
+            "permissions": {
+              "type": "integer",
+              "format": "int64",
+              "description": "The user's permissions\n",
+              "example": 0,
+              "minimum": 0
+            },
+            "project_id": {
+              "$ref": "#/components/schemas/ProjectId"
+            },
+            "user_id": {
+              "$ref": "#/components/schemas/UserId"
+            }
+          }
+        },
+        "ProjectMemberId": {
+          "type": "string"
+        },
+        "Register": {
+          "type": "object",
+          "required": [
+            "username",
+            "password",
+            "email"
+          ],
+          "properties": {
+            "email": {
+              "type": "string",
+              "description": "The user's email address\n",
+              "example": "user@example.com"
+            },
+            "password": {
+              "type": "string",
+              "format": "password",
+              "description": "The user's password\n",
+              "example": "password"
+            },
+            "username": {
+              "type": "string",
+              "description": "The user's username\n",
+              "example": "My username"
+            }
+          }
+        },
+        "SubTask": {
+          "type": "object",
+          "required": [
+            "id",
+            "task_id",
+            "project_id",
+            "body",
+            "position",
+            "completed"
+          ],
+          "properties": {
+            "assignee": {
+              "type": "string",
+              "description": "The assigned member's user id (optional).\nThis is kept as a string to be able to be\ndecoded directly.\n",
+              "example": "12345678",
+              "nullable": true,
+              "maxLength": 8,
+              "minLength": 8
+            },
+            "body": {
+              "type": "string",
+              "description": "The sub-task's description (0 -\u003E 90 chars)\n",
+              "example": "My Subtask"
+            },
+            "completed": {
+              "type": "boolean",
+              "description": "Weather the sub task is completed\n",
+              "example": false
+            },
+            "id": {
+              "$ref": "#/components/schemas/SubTaskId"
+            },
+            "position": {
+              "type": "integer",
+              "format": "int64",
+              "description": "The position of the sub-task in the task\n",
+              "example": 0
+            },
+            "project_id": {
+              "$ref": "#/components/schemas/ProjectId"
+            },
+            "task_id": {
+              "$ref": "#/components/schemas/TaskId"
+            },
+            "weight": {
+              "type": "integer",
+              "format": "int64",
+              "description": "The weight of the sub-task when calculating\ncompletion (optional) by default this will\nbe taken as 100.\n",
+              "example": 100,
+              "nullable": true
+            }
+          }
+        },
+        "SubTaskBuilder": {
+          "type": "object",
+          "required": [
+            "body"
+          ],
+          "properties": {
+            "body": {
+              "type": "string",
+              "example": "My Subtask"
+            }
+          }
+        },
+        "SubTaskId": {
+          "type": "string"
+        },
+        "SubTasks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/components/schemas/SubTaskId"
+          }
+        },
+        "Task": {
+          "type": "object",
+          "required": [
+            "id",
+            "project_id",
+            "task_group_id",
+            "name",
+            "creator",
+            "primary_colour",
+            "accent_colour",
+            "position",
+            "created"
+          ],
+          "properties": {
+            "accent_colour": {
+              "type": "string",
+              "description": "The task's accent colour (hex) This is the\ncolour used in places like the progress bar\nof the task\n",
+              "example": "#FFFFFF"
+            },
+            "created": {
+              "type": "string",
+              "format": "date-time",
+              "description": "The time the task was created (ms)\n"
+            },
+            "creator": {
+              "$ref": "#/components/schemas/ProjectMemberId"
+            },
+            "due": {
+              "type": "string",
+              "format": "date-time",
+              "description": "The task's due date (if any) (ms)\n",
+              "nullable": true
+            },
+            "id": {
+              "$ref": "#/components/schemas/TaskId"
+            },
+            "information": {
+              "type": "string",
+              "description": "The task's description, can also include markdown\n",
+              "example": "Information about my task",
+              "nullable": true
+            },
+            "name": {
+              "type": "string",
+              "description": "The task's name (3 -\u003E 30 characters)\n",
+              "example": "My task",
+              "maxLength": 90
+            },
+            "position": {
+              "type": "integer",
+              "format": "int64",
+              "description": "The task's position in the task group\n",
+              "example": 0
+            },
+            "primary_colour": {
+              "type": "string",
+              "description": "The task's primary colour (hex) This is\nthe colour used in places like the background\nof the task\n",
+              "example": "#FFFFFF"
+            },
+            "project_id": {
+              "$ref": "#/components/schemas/ProjectId"
+            },
+            "task_group_id": {
+              "$ref": "#/components/schemas/TaskGroupId"
+            }
+          }
+        },
+        "TaskBuilder": {
+          "type": "object",
+          "required": [
+            "name",
+            "primary_colour",
+            "accent_colour"
+          ],
+          "properties": {
+            "accent_colour": {
+              "type": "string",
+              "description": "The task's accent colour (hex) - progress bar\n",
+              "example": "#FFFFFF"
+            },
+            "name": {
+              "type": "string",
+              "description": "The name of the task (3 -\u003E 90 characters)\n",
+              "example": "My task",
+              "maxLength": 90
+            },
+            "primary_colour": {
+              "type": "string",
+              "description": "The task's primary colour (hex) - background\n",
+              "example": "#FFFFFF"
+            }
+          }
+        },
+        "TaskGroup": {
+          "type": "object",
+          "required": [
+            "id",
+            "project_id",
+            "name",
+            "position"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/components/schemas/TaskGroupId"
+            },
+            "name": {
+              "type": "string",
+              "description": "The task group's name (3 -\u003E 30 characters)\n",
+              "example": "My Task Group"
+            },
+            "position": {
+              "type": "integer",
+              "format": "int64",
+              "description": "The position of the task group in the project\nstarting from zero\n",
+              "example": 0
+            },
+            "project_id": {
+              "$ref": "#/components/schemas/ProjectId"
+            }
+          }
+        },
+        "TaskGroupBuilder": {
+          "type": "object",
+          "required": [
+            "name"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "The task group's name (3 -\u003E 30 characters)\n",
+              "example": "My Task Group"
+            },
+            "position": {
+              "type": "integer",
+              "format": "int64",
+              "description": "The position of the task group in the project\nIf this is lowest unused value is used (the\nend of the list)",
+              "example": 0,
+              "nullable": true
+            }
+          }
+        },
+        "TaskGroupId": {
+          "type": "string"
+        },
+        "TaskId": {
+          "type": "string"
+        },
+        "Token": {
+          "type": "string"
+        },
+        "User": {
+          "type": "object",
+          "required": [
+            "id",
+            "username",
+            "email"
+          ],
+          "properties": {
+            "email": {
+              "type": "string",
+              "description": "The user's email address\n",
+              "example": "user@example.com"
+            },
+            "id": {
+              "$ref": "#/components/schemas/UserId"
+            },
+            "username": {
+              "type": "string",
+              "description": "The user's unique username (3 -\u003E 30 chars)\n",
+              "example": "My username"
+            }
+          }
+        },
+        "UserId": {
+          "type": "string"
+        }
+      }
+    }
+  }
