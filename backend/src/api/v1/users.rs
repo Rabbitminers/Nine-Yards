@@ -1,6 +1,7 @@
 use axum::extract::{Path, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use utoipa::ToSchema;
 
 use crate::ApiContext;
 use crate::error::ApiError;
@@ -80,7 +81,7 @@ async fn get_user_by_id(
         .map(|user| Json(user))
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct AuthenticatedUser {
     user: User,
     token: Token
@@ -129,7 +130,7 @@ async fn register(
     path = "/users/login",
     context_path = "/api/v1",
     tag = "v1",
-    request_body(content = Register, description = "A login form", content_type = "application/json"),
+    request_body(content = Login, description = "A login form", content_type = "application/json"),
     responses(
         (status = 200, description = "Successfully retrieved user", body = AuthenticatedUser, content_type = "application/json"),
         (status = 401, description = "Unauthorized, provide a bearer token"),

@@ -17,7 +17,7 @@ use crate::error::ApiError;
 pub (crate) fn configure() -> Router<ApiContext> {
     Router::new()
         .route("/sub-tasks/:id", 
-            get(get_subtask_by_id)
+            get(get_sub_task_by_id)
             .put(edit_sub_task)
             .delete(remove_sub_task)
         )
@@ -43,7 +43,7 @@ pub (crate) fn configure() -> Router<ApiContext> {
     ),
     security((), ("Bearer" = [])),
 )]
-async fn get_subtask_by_id(
+async fn get_sub_task_by_id(
     State(ctx): State<ApiContext>,
     Path(id): Path<SubTaskId>,
     SubTaskMember(membership): SubTaskMember 

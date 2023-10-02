@@ -1,4 +1,4 @@
-use axum::extract::{State, Path, Query};
+use axum::extract::{State, Path};
 use axum::routing::get;
 use axum::{Router, Json};
 
@@ -188,13 +188,13 @@ async fn get_members(
 
 #[utoipa::path(
     post,
-    path = "projects/{id}/members",
+    path = "/projects/{id}/members",
     context_path = "/api/v1",
     tag = "v1",
     request_body(content = [String], description = "The users id's to invite", content_type = "application/json"),
-    params(("id" = String, Path, description = "The id of the project", max_length = 8, min_length = 8)),
+    params(("id" = String, Path, description = "The id of the project to invite a user to", max_length = 8, min_length = 8)),
     responses(
-        (status = 200, description = "Successfully created a project"),
+        (status = 200, description = "Successfully invited member and sent invitation notification"),
         (status = 401, description = "Unauthorized, provide a bearer token"),
         (status = 403, description = "Forbidden, you don't have permission to invite a member to this project"),
         (status = 500, description = "Internal server error")
