@@ -222,7 +222,7 @@ async fn invite_member(
 
 #[utoipa::path(
     delete,
-    path = "projects/{id}",
+    path = "/projects/{id}",
     context_path = "/api/v1",
     tag = "v1",
     params(("id" = String, Path, description = "The id of the project", max_length = 8, min_length = 8)),
