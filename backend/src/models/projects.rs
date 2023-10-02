@@ -7,41 +7,60 @@ use super::id::{ProjectId, UserId, ProjectMemberId};
 
 #[derive(Serialize, ToSchema)]
 pub struct Project {
-    // The project's id
+    /// The project's id
+    /// 
+    #[schema(example="12345678", min_length=8, max_length=8)]
     pub id: ProjectId,
-    // The project's name (3 -> 30 charachters)
+    /// The project's name (3 -> 30 charachters)
+    /// 
+    #[schema(example = "My project", min_length = 3, max_length = 30)]
     pub name: String,
-    // The project owner's id
+    /// The project owner's user id
+    /// 
+    #[schema(example="03082007", min_length=8, max_length=8)]
     pub owner: UserId,
-    // The project's icon's url
+    /// The project's icon's url
+    /// 
+    #[schema(example = "https://example.com/icon.png")]
     pub icon_url: String,
-    // The permissions of non-members.
-    // by default this is none
+    /// The permissions of non-member by default this is none.
+    /// And a membership would be needed to interact with the 
+    /// project in any capcacity.
+    /// 
+    #[schema(value_type = u64, example = 0)]
     pub public_permissions: Permissions
 }
 
 #[derive(Deserialize, ToSchema)]
 pub struct EditProject {
-    // The project's new name (3 -> 30 charachters)
+    /// The project's new name (3 -> 30 charachters)
+    /// 
     #[schema(example = "My project", min_length = 3, max_length = 30)]
     pub name: Option<String>,
-    // The project's new icon
+    /// The project's new icon's url
+    /// 
     #[schema(example = "https://example.com/icon.png")]
     pub icon_url: Option<String>,
-    // The project's new visibility
+    /// The project's new visibility
+    ///
+    #[schema(value_type = Option<u64>, example = 0)]
     pub public_permissions: Option<Permissions>
 }
 
 #[derive(Deserialize, ToSchema)]
 pub struct ProjectBuilder {
-    // The project's name (3 -> 30 charachters)
+    /// The project's name (3 -> 30 charachters)
+    /// 
     #[schema(example = "My project", min_length = 3, max_length = 30)]
-    name: String,
-    // The project's icon's url
+    pub name: String,
+    /// The project's icon's url
+    /// 
     #[schema(example = "https://example.com/icon.png")]
-    icon_url: String,
-    // The project's visibility
-    public_permissions: Permissions
+    pub icon_url: String,
+    /// The project's visibility,
+    /// 
+    #[schema(value_type = u64, example = 0)]
+    pub public_permissions: Permissions
 }
 
 impl Project {
@@ -423,15 +442,25 @@ impl Default for Permissions {
 
 #[derive(Serialize, ToSchema)]
 pub struct ProjectMember {
-    // The project member's id
+    /// The project member's id
+    /// 
+    #[schema(example="03082007", min_length=8, max_length=8)]
     pub id: ProjectMemberId,
-    // The project the membership is for's id
+    /// The project the membership is for's id
+    /// 
+    #[schema(example="12345678", min_length=8, max_length=8)]
     pub project_id: ProjectId,
-    // The user's id
+    /// The user's id
+    /// 
+    #[schema(example="03082007", min_length=8, max_length=8)]
     pub user_id: UserId,
-    // The user's permissions 
+    /// The user's permissions 
+    /// 
+    #[schema(value_type = u64, example=0)]
     pub permissions: Permissions,
-    // Whether the user has accepted the project's invitation
+    /// Whether the user has accepted the project's invitation
+    /// 
+    #[schema(example=true)]
     pub accepted: bool,
 }
 
