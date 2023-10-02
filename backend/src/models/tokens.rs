@@ -1,21 +1,25 @@
 use chrono::Utc;
 use jsonwebtoken::{TokenData, DecodingKey, Validation, Header, EncodingKey, errors::Result};
+use utoipa::ToSchema;
 
 use super::users::User;
 
 pub static KEY: [u8; 16] = *include_bytes!("../secret.key");
 static ONE_WEEK: i64 = 60 * 60 * 24 * 7; // in seconds
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct Token(pub String);
 
 #[derive(Serialize, Deserialize)]
 pub struct TokenClaims {
-    // The time the token was issues at (s)
+    /// The time the token was issues at (s)
+    /// 
     pub iat: i64,
-    // The time the token will expire (issue time + one week)
+    /// The time the token will expire (issue time + one week)
+    /// 
     pub exp: i64,
-    // The user's id
+    /// The user's id
+    /// 
     pub user_id: String,
 }
 
