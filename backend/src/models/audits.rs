@@ -1,20 +1,30 @@
 use chrono::{NaiveDateTime, Utc};
+use utoipa::ToSchema;
 
 use crate::database::Database;
 
 use super::{id::{ProjectMemberId, ProjectId, AuditId}, projects::ProjectMember};
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct Audit {
-    // The audit's id
+    /// The audit's id
+    /// 
+    #[schema(example="123456789abc", min_length=12, max_length=12)]
     pub id: AuditId,
-    // The auditor's membership's id
+    /// The auditor's membership's id
+    /// 
+    #[schema(example="12345678", min_length=8, max_length=8)]
     pub auditor: ProjectMemberId,
-    // The parent project's id
+    /// The parent project's id
+    /// 
+    #[schema(example="12345678", min_length=8, max_length=8)]
     pub project_id: ProjectId,
-    // The body of the audit
+    /// The body of the audit
+    /// 
+    #[schema(example="Example body")]
     pub body: String,
-    // The datetime the audit was created
+    /// The datetime the audit was created
+    /// 
     pub timestamp: NaiveDateTime
 }
 
