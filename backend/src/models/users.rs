@@ -1,6 +1,7 @@
 use bcrypt::DEFAULT_COST;
 use serde_derive::{Serialize, Deserialize};
 use sqlx::FromRow;
+use utoipa::ToSchema;
 
 use crate::error::ApiError;
 use crate::database::Database;
@@ -9,34 +10,52 @@ use super::id::UserId;
 
 pub const DELETED_USER: &str = "03082007";
 
-#[derive(Serialize, FromRow, sqlx::Decode)]
+#[derive(Serialize, ToSchema, FromRow, sqlx::Decode)]
 pub struct User {
-    // The user's unqiue id
+    /// The user's unqiue id
+    /// 
+    #[schema(example="03082007", min_length=8, max_length=8)]
     pub id: UserId,
-    // The user's unique username (3 -> 30 chars)
+    /// The user's unique username (3 -> 30 chars)
+    /// 
+    #[schema(example="My username")]
     pub username: String,
-    // The user's hashed password
+    /// The user's hashed password
+    /// 
     #[serde(skip_serializing)]
+    #[schema(format=Password)]
     pub password: String,
-    // The user's email address
+    /// The user's email address
+    /// 
+    #[schema(example="user@example.com")]
     pub email: String,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, ToSchema, Debug)]
 pub struct Register {
-    // The user's username
+    /// The user's username
+    /// 
+    #[schema(example="My username")]
     pub username: String,
-    // The user's password
+    /// The user's password
+    /// 
+    #[schema(example="password", format=Password)]
     pub password: String,
-    // The user's email address
+    /// The user's email address
+    /// 
+    #[schema(example="user@example.com")]
     pub email: String
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, ToSchema, Deserialize)]
 pub struct Login {
-    // Either a username or email for validation
+    /// Either a username or email for validation
+    /// 
+    #[schema(example="My username")]
     pub username_or_email: String,
-    // The user's password to validated
+    /// The user's password to validated
+    /// 
+    #[schema(example="password", format=Password)]
     pub password: String
 }
 
