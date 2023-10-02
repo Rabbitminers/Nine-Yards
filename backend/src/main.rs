@@ -75,6 +75,7 @@ pub mod utilities;
         models::users::User,
         models::users::Register,
         models::users::Login,
+        models::users::AuthenticatedUser,
 
         models::audits::Audit,
 

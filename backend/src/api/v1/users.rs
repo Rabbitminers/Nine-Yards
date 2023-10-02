@@ -1,13 +1,12 @@
 use axum::extract::{Path, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use utoipa::ToSchema;
 
 use crate::ApiContext;
 use crate::error::ApiError;
 use crate::models::id::UserId;
 use crate::models::tokens::Token;
-use crate::models::users::{User, Login, Register};
+use crate::models::users::{User, Login, Register, AuthenticatedUser};
 use crate::response::Result;
 
 /// Create a router to be nested on the main api router with
@@ -79,12 +78,6 @@ async fn get_user_by_id(
         .await?
         .ok_or(ApiError::NotFound)
         .map(|user| Json(user))
-}
-
-#[derive(Serialize, ToSchema)]
-pub struct AuthenticatedUser {
-    user: User,
-    token: Token
 }
 
 /// Registers a new user and returns their information aswell as
