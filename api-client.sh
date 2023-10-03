@@ -1,0 +1,1 @@
+openapi-generator-cli generate -g typescript-fetch -i ./openapi.json -o web/src/api
