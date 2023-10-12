@@ -2,10 +2,7 @@ use std::{time::Duration, env};
 
 use super::PoolOptions;
 
-pub async fn connect() -> Result<super::SqlPool, sqlx::Error> {
-    let database_url = env::var("DATABASE_URL")
-            .expect("DATABASE_URL not found.");
-        
+pub async fn connect(database_url: String) -> Result<super::SqlPool, sqlx::Error> {
     let pool = PoolOptions::new()
         .min_connections(
             env::var("DATABASE_MIN_CONNECTIONS")
