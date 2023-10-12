@@ -1,14 +1,14 @@
 use axum::extract::{FromRequestParts, Path, FromRef};
-use axum::http::header;
 use axum::http::request::Parts;
-use axum::{async_trait, RequestPartsExt};
+use axum::{async_trait, RequestPartsExt, Extension};
+use tower_cookies::Cookies;
 
 use crate::error::ApiError;
 use crate::models::id::{ProjectId, UserId};
 use crate::models::projects::ProjectMember;
 use crate::models::tokens::Token;
 use crate::models::users::User;
-use crate::ApiContext;
+use crate::api::ApiContext;
 
 #[async_trait]
 impl<S> FromRequestParts<S> for UserId
@@ -18,15 +18,18 @@ where
     type Rejection = ApiError;
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        let token = parts
-            .headers
-            .get(header::AUTHORIZATION)
-            .map(|v| v.to_str().unwrap().strip_prefix("Bearer "))
-            .ok_or(ApiError::Unauthorized)?
-            .map(|t| Token(t.to_string()))
+        let Extension(cookies) = parts
+            .extract::<Extension<Cookies>>()
+            .await
+            .map_err(|_| ApiError::Unauthorized)?;
+
+        let token = Token::from_jar(cookies)
             .ok_or(ApiError::Unauthorized)?;
 
-        let claims = token.decode().map_err(|_| ApiError::Unauthorized)?.claims;
+        let claims = token
+            .decode()
+            .map_err(|_| ApiError::Unauthorized)?
+            .claims;
 
         Ok(UserId(claims.user_id))
     }
@@ -105,7 +108,7 @@ macro_rules! impl_from_request_parts {
         impl <S> axum::extract::FromRequestParts<S> for $struct
         where
             S: Send + Sync,
-            crate::ApiContext: FromRef<S>
+            crate::api::ApiContext: FromRef<S>
         {
             type Rejection = crate::error::ApiError;
 

@@ -1,5 +1,7 @@
 use chrono::Utc;
 use jsonwebtoken::{TokenData, DecodingKey, Validation, Header, EncodingKey, errors::Result};
+use time::Duration;
+use tower_cookies::{Cookie, Cookies};
 use utoipa::ToSchema;
 
 use super::users::User;
@@ -24,6 +26,8 @@ pub struct TokenClaims {
 }
 
 impl Token {
+    pub const TOKEN_KEY: &str = "token";
+
     pub fn decode(&self) -> Result<TokenData<TokenClaims>> {
         jsonwebtoken::decode::<TokenClaims>(
             &self.0,
@@ -48,6 +52,19 @@ impl Token {
         ).unwrap();
 
         Self(token)
+    }
+
+    pub fn into_cookie<'c>(self) -> Cookie<'c> {
+        Cookie::build(Self::TOKEN_KEY, self.0)
+            .secure(true)
+            .http_only(true)
+            .max_age(Duration::days(7))
+            .finish()
+    }
+
+    pub fn from_jar(cookies: Cookies) -> Option<Self> {
+        cookies.get(Self::TOKEN_KEY)
+            .map(|t| Self(t.value().to_string()))
     }
 }
 

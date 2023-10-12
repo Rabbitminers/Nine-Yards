@@ -7,7 +7,6 @@ use crate::error::ApiError;
 use crate::database::Database;
 
 use super::id::UserId;
-use super::tokens::Token;
 
 pub const DELETED_USER: &str = "03082007";
 
@@ -58,18 +57,6 @@ pub struct Login {
     /// 
     #[schema(example="password", format=Password)]
     pub password: String
-}
-
-#[derive(Serialize, ToSchema)]
-pub struct AuthenticatedUser {
-    /// The users data to prevent the need
-    /// for a following request to fetch this
-    /// 
-    pub user: User,
-    /// The token generated for the new
-    /// session
-    /// 
-    pub token: Token
 }
 
 impl User {
