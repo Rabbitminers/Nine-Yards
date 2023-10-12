@@ -4,12 +4,13 @@ version = "0.1.0"
 authors = ["Rabbitminers <rabbitminers@zohomail.eu>"]
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [features]
-default = ["sqlite"]
-postgres = [ "sqlx/postgres"]
-sqlite = [ "sqlx/sqlite"]
+default = ["sqlite", "redoc"]
+postgres = ["sqlx/postgres"]
+sqlite = ["sqlx/sqlite"]
+swagger = ["dep:utoipa-swagger-ui"]
+rapidoc = ["dep:utoipa-rapidoc"]
+redoc = ["dep:utoipa-redoc"]
 
 [dependencies.sqlx]
 version = "0.7.1"
@@ -32,16 +33,23 @@ axum-extra = { version = "0.8.0", features = ["typed-routing"] }
 tokio = { version = "1.29.1", features = ["full"] }
 
 tower = "0.4.13"
-tower-http = { version = "0.4.3", features = ["trace", "cors", "auth", "add-extension"] } 
+tower-http = { version = "0.4.3", features = ["trace", "cors", "auth", "add-extension", "util"] } 
+tower-cookies = { version = "0.9.0", features = ["private", "signed"]} 
 
-utoipa = { version = "3.4.3", features = ["axum_extras", "chrono"] }
-utoipa-swagger-ui = { version= "3.0.2", features = ["axum"] }
+# Utoipa / API documentation front ends
+utoipa = { version = "4.0.0", features = ["axum_extras", "chrono", "yaml"] }
+utoipa-swagger-ui = { version = "4.0.0", features = ["axum"], optional = true }
+utoipa-rapidoc = { version = "1.0.0", features = ["axum"], optional = true }
+utoipa-redoc = { version = "1.0.0", features = ["axum"], optional = true }
 
 # Serde
 serde = "1.0.123"
 serde_derive = "1.0.123"
 serde_json = "1.0.62"
 serde_qs = "0.12.0"
+
+# Clap
+clap = { version = "4.4.6", features = ["derive", "env"] } 
 
 # Misc
 time = "0.3.23" # TODO: remove chrono deps
