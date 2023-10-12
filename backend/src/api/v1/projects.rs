@@ -8,7 +8,7 @@ use crate::models::id::{UserId, ProjectId};
 use crate::error::ApiError;
 use crate::models::tasks::{TaskGroup, TaskGroupBuilder};
 use crate::response::Result;
-use crate::ApiContext;
+use crate::api::ApiContext;
 
 /// Create a router to be nested on the main api router with
 /// endpoints for creating, updating and retrieving projects

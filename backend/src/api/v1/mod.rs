@@ -1,7 +1,7 @@
 use axum::Router;
 use chrono::{NaiveDateTime, Utc, Days};
 
-use crate::ApiContext;
+use crate::api::ApiContext;
 
 pub mod users;
 pub mod projects;
@@ -20,17 +20,21 @@ pub fn configure() -> Router<ApiContext> {
 
 #[derive(Deserialize)]
 pub struct FetchQuery {
-    // If filled only results made after this timestamp will be
-    // fetched
+    /// If filled only results made after this timestamp will be
+    /// fetched
+    /// 
     pub from: Option<NaiveDateTime>,
-    // If filled only results made before this timestamp will be
-    // fetched
+    /// If filled only results made before this timestamp will be
+    /// fetched
+    /// 
     pub until: Option<NaiveDateTime>,
-    // The maximum number of results to fetch, by default 20
+    /// The maximum number of results to fetch, by default 20
+    /// 
     pub limit: Option<u32>,
-    // The offset from which to start fetching, by default no
-    // offset is applied. The actual offset is calculated from the
-    // limit value (limit * page)
+    /// The offset from which to start fetching, by default no
+    /// offset is applied. The actual offset is calculated from the
+    /// limit value (limit * page)
+    ///
     pub page: Option<u32>,
 }
 

@@ -8,7 +8,7 @@ use crate::models::id::TaskId;
 use crate::models::projects::Permissions;
 use crate::models::tasks::{EditTask, FullTask, SubTask, SubTaskBuilder, Task};
 use crate::response::Result;
-use crate::ApiContext;
+use crate::api::ApiContext;
 
 /// Create a router to be nested on the main api router with
 /// endpoints for task item endpoints and generic sub-task routes

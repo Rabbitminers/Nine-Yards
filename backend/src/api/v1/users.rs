@@ -1,12 +1,13 @@
 use axum::extract::{Path, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use tower_cookies::Cookies;
 
-use crate::ApiContext;
+use crate::api::ApiContext;
 use crate::error::ApiError;
 use crate::models::id::UserId;
 use crate::models::tokens::Token;
-use crate::models::users::{User, Login, Register, AuthenticatedUser};
+use crate::models::users::{User, Login, Register};
 use crate::response::Result;
 
 /// Create a router to be nested on the main api router with
@@ -91,23 +92,25 @@ async fn get_user_by_id(
     tag = "v1",
     request_body(content = Register, description = "A register form", content_type = "application/json"),
     responses(
-        (status = 200, description = "Successfully registered", body = AuthenticatedUser, content_type = "application/json"),
+        (status = 200, description = "Successfully registered", body = User, content_type = "application/json"),
         (status = 400, description = "Bad request"),
         (status = 500, description = "Internal server error")
     )
 )]
 async fn register(
     State(ctx): State<ApiContext>,
+    cookies: Cookies,
     Json(form): Json<Register>,
-) -> Result<Json<AuthenticatedUser>> {
+) -> Result<Json<User>> {
     let mut transaction = ctx.pool.begin().await?;
 
     let user = User::register(form, &mut transaction).await?;
     transaction.commit().await?;    
 
     let token = Token::encode(&user);
+    cookies.add(token.into_cookie());
     
-    Ok(Json(AuthenticatedUser { user, token }))
+    Ok(Json(user))
 }
 
 /// Logs in a user given their credentials and returns an
@@ -125,21 +128,23 @@ async fn register(
     tag = "v1",
     request_body(content = Login, description = "A login form", content_type = "application/json"),
     responses(
-        (status = 200, description = "Successfully retrieved user", body = AuthenticatedUser, content_type = "application/json"),
+        (status = 200, description = "Successfully retrieved user", body = User, content_type = "application/json"),
         (status = 401, description = "Unauthorized, provide a bearer token"),
         (status = 500, description = "Internal server error")
     )
 )]
 async fn login(
     State(ctx): State<ApiContext>,
+    cookies: Cookies,
     Json(form): Json<Login>,
-) -> Result<Json<AuthenticatedUser>> {
+) -> Result<Json<User>> {
     let mut transaction = ctx.pool.begin().await?;
 
     let user = User::login(form, &mut transaction).await?;
     transaction.commit().await?;
     
     let token = Token::encode(&user);
+    cookies.add(token.into_cookie());
  
-    Ok(Json(AuthenticatedUser { user, token }))
+    Ok(Json(user))
 }
